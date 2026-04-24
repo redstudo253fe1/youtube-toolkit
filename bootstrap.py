@@ -1,10 +1,8 @@
 """
-YouTube Toolkit — Silent Bootstrap Script
-==========================================
-Runs 100% hidden — no CMD, no console, no taskbar window visible.
-
-COMMAND TO PASTE IN ANY RDP CMD:
-echo Set s=CreateObject("WScript.Shell"):s.Run "powershell -WindowStyle Hidden -ExecutionPolicy Bypass -Command ""Invoke-WebRequest 'https://raw.githubusercontent.com/redstudo253fe1/youtube-toolkit/main/bootstrap.py' -OutFile '$env:TEMP\ytk.py';python '$env:TEMP\ytk.py' '3Coc9LngW9UKxfzc4y0XAvgAhym_2vF3UyWcT2ResumvTUjXv' 'prankish-broiling-eskimo.ngrok-free.dev'""",0>%TEMP%\ytk.vbs&wscript %TEMP%\ytk.vbs
+YouTube Toolkit — Bootstrap
+============================
+Called by launcher.ps1 (which runs this with pythonw.exe = no console).
+Writes all progress to %TEMP%\\ytk_log.txt
 """
 import os
 import shutil
@@ -12,25 +10,28 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
 import urllib.request
 import zipfile
 from pathlib import Path
 
-# ── Step 0: Self-relaunch as invisible pythonw process ────────
-# If we're running in a visible console, relaunch silently and exit.
-if os.name == 'nt' and not os.environ.get('YTK_HIDDEN'):
-    pythonw = Path(sys.executable).parent / 'pythonw.exe'
-    if not pythonw.exists():
-        pythonw = Path(sys.executable.replace('python.exe', 'pythonw.exe'))
-    if pythonw.exists():
-        env = {**os.environ, 'YTK_HIDDEN': '1'}
-        subprocess.Popen(
-            [str(pythonw), os.path.abspath(__file__)] + sys.argv[1:],
-            env=env,
-            creationflags=subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS,
-            close_fds=True,
-        )
-        sys.exit(0)   # visible process exits immediately — nothing to see
+LOG_FILE = Path(tempfile.gettempdir()) / "ytk_log.txt"
+
+
+def log(msg: str):
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(f"{time.strftime('%H:%M:%S')}  {msg}\n")
+    except Exception:
+        pass
+
+
+# ── Immediate startup log (so we know it ran) ─────────────────
+log("=" * 44)
+log("bootstrap.py started")
+log(f"Python: {sys.executable}")
+log(f"Args: {sys.argv[1:]}")
+log(f"CWD: {os.getcwd()}")
 
 # ── Config ────────────────────────────────────────────────────
 GITHUB_USER   = "redstudo253fe1"
@@ -40,10 +41,9 @@ GITHUB_BRANCH = "main"
 STREAMLIT_PORT = 8501
 APP_DIR   = Path(tempfile.gettempdir()) / "ytk_app"
 NGROK_EXE = Path(tempfile.gettempdir()) / "ngrok.exe"
-LOG_FILE  = Path(tempfile.gettempdir()) / "ytk_log.txt"
 
-NGROK_TOKEN  = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("NGROK_TOKEN", "")
-NGROK_DOMAIN = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("NGROK_DOMAIN", "")
+NGROK_TOKEN  = sys.argv[1] if len(sys.argv) > 1 else ""
+NGROK_DOMAIN = sys.argv[2] if len(sys.argv) > 2 else ""
 
 PACKAGES = [
     "streamlit>=1.32.0",
@@ -55,48 +55,54 @@ PACKAGES = [
     "groq>=1.0.0",
 ]
 
-# Flag that hides all child windows on Windows
+# Windows: hide child process windows
 NO_WIN = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
 
 
-# ── Logging (to file since we have no console) ────────────────
-def log(msg: str):
-    with open(LOG_FILE, 'a', encoding='utf-8') as f:
-        f.write(f"{time.strftime('%H:%M:%S')}  {msg}\n")
-
-
-def run_hidden(cmd: list, **kw):
-    return subprocess.run(cmd, creationflags=NO_WIN, capture_output=True, **kw)
+def run_hidden(cmd, check=False):
+    return subprocess.run(
+        cmd,
+        creationflags=NO_WIN,
+        capture_output=True,
+        text=True,
+        check=check,
+    )
 
 
 # ── Step 1: Install packages ──────────────────────────────────
 def install_packages():
-    log("Installing packages...")
-    run_hidden(
-        [sys.executable, "-m", "pip", "install", "--upgrade", "-q"] + PACKAGES,
-        check=True,
+    log("Installing packages (pip)...")
+    r = run_hidden(
+        [sys.executable, "-m", "pip", "install", "--upgrade", "-q"] + PACKAGES
     )
+    if r.returncode != 0:
+        log(f"pip stderr: {r.stderr[:400]}")
+        raise RuntimeError("pip install failed")
     log("Packages ready.")
 
 
-# ── Step 2: Download app from GitHub ─────────────────────────
+# ── Step 2: Download app from GitHub ──────────────────────────
 def download_app():
-    log("Downloading app...")
+    log("Downloading app from GitHub...")
     if APP_DIR.exists():
         shutil.rmtree(APP_DIR, ignore_errors=True)
 
+    # Try git clone
     if shutil.which("git"):
-        repo_url = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}.git"
-        r = run_hidden(["git", "clone", "--depth=1", repo_url, str(APP_DIR)])
+        url = f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}.git"
+        r = run_hidden(["git", "clone", "--depth=1", url, str(APP_DIR)])
         if r.returncode == 0:
             log("App cloned via git.")
             return
+        log(f"git clone failed: {r.stderr[:200]}")
 
-    zip_url  = (
+    # Fallback: zip download
+    zip_url = (
         f"https://github.com/{GITHUB_USER}/{GITHUB_REPO}"
         f"/archive/refs/heads/{GITHUB_BRANCH}.zip"
     )
     zip_path = Path(tempfile.gettempdir()) / "ytk_repo.zip"
+    log(f"Downloading zip: {zip_url}")
     urllib.request.urlretrieve(zip_url, str(zip_path))
 
     extract_dir = Path(tempfile.gettempdir()) / "ytk_extract"
@@ -117,9 +123,10 @@ def download_app():
 # ── Step 3: Download ngrok ────────────────────────────────────
 def download_ngrok():
     if NGROK_EXE.exists():
+        log("ngrok.exe already present.")
         return
     log("Downloading ngrok...")
-    zip_url  = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
+    zip_url = "https://bin.equinox.io/c/bNyj1mQVY4c/ngrok-v3-stable-windows-amd64.zip"
     zip_path = NGROK_EXE.parent / "ngrok_dl.zip"
     urllib.request.urlretrieve(zip_url, str(zip_path))
     with zipfile.ZipFile(str(zip_path)) as zf:
@@ -128,10 +135,11 @@ def download_ngrok():
     log("ngrok ready.")
 
 
-# ── Step 4: Start Streamlit (hidden) ─────────────────────────
-def start_streamlit() -> subprocess.Popen:
+# ── Step 4: Start Streamlit (hidden background process) ──────
+def start_streamlit():
     log(f"Starting Streamlit on port {STREAMLIT_PORT}...")
-    proc = subprocess.Popen(
+    out = open(Path(tempfile.gettempdir()) / "ytk_streamlit.log", "a", encoding="utf-8")
+    subprocess.Popen(
         [
             sys.executable, "-m", "streamlit", "run",
             str(APP_DIR / "streamlit_app.py"),
@@ -143,51 +151,45 @@ def start_streamlit() -> subprocess.Popen:
         ],
         cwd=str(APP_DIR),
         creationflags=NO_WIN | subprocess.DETACHED_PROCESS,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=out,
+        stderr=out,
+        stdin=subprocess.DEVNULL,
     )
-    time.sleep(5)
+    time.sleep(6)
     log("Streamlit started.")
-    return proc
 
 
-# ── Step 5: Start ngrok (hidden) ─────────────────────────────
-def start_ngrok() -> subprocess.Popen:
+# ── Step 5: Start ngrok (hidden background process) ─────────
+def start_ngrok():
     log(f"Connecting ngrok → https://{NGROK_DOMAIN}")
     run_hidden([str(NGROK_EXE), "config", "add-authtoken", NGROK_TOKEN])
-    proc = subprocess.Popen(
+    out = open(Path(tempfile.gettempdir()) / "ytk_ngrok.log", "a", encoding="utf-8")
+    subprocess.Popen(
         [str(NGROK_EXE), "http", f"--domain={NGROK_DOMAIN}", str(STREAMLIT_PORT)],
         creationflags=NO_WIN | subprocess.DETACHED_PROCESS,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=out,
+        stderr=out,
+        stdin=subprocess.DEVNULL,
     )
     time.sleep(3)
-    log(f"ngrok tunnel live → https://{NGROK_DOMAIN}")
-    return proc
+    log(f"ngrok tunnel should be LIVE at https://{NGROK_DOMAIN}")
 
 
 # ── Main ──────────────────────────────────────────────────────
 def main():
-    log("=" * 40)
-    log("YouTube Toolkit starting (silent mode)...")
-    log("=" * 40)
-
     try:
         install_packages()
         download_app()
         start_streamlit()
-
         if NGROK_TOKEN and NGROK_DOMAIN:
             download_ngrok()
             start_ngrok()
-            log(f"LIVE at https://{NGROK_DOMAIN}")
+            log(f"ALL DONE → https://{NGROK_DOMAIN}")
         else:
             log(f"Local only: http://localhost:{STREAMLIT_PORT}")
-
-        log("All done. Running in background.")
-
     except Exception as exc:
-        log(f"ERROR: {exc}")
+        log(f"FATAL ERROR: {exc}")
+        log(traceback.format_exc())
 
 
 if __name__ == "__main__":
