@@ -113,7 +113,19 @@ def download_app():
 
     extracted = extract_dir / f"{GITHUB_REPO}-{GITHUB_BRANCH}"
     if extracted.exists():
-        shutil.copytree(str(extracted), str(APP_DIR))
+        def _copy_tree(src, dst):
+            os.makedirs(dst, exist_ok=True)
+            for name in os.listdir(src):
+                s = os.path.join(src, name)
+                d = os.path.join(dst, name)
+                try:
+                    if os.path.isdir(s):
+                        _copy_tree(s, d)
+                    else:
+                        shutil.copy2(s, d)
+                except Exception as e:
+                    log(f"Warning: skipped {name}: {e}")
+        _copy_tree(str(extracted), str(APP_DIR))
 
     zip_path.unlink(missing_ok=True)
     shutil.rmtree(extract_dir, ignore_errors=True)
