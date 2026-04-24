@@ -111,15 +111,15 @@ def download_youtube_audio_for_groq(url, on_status=None):
     if on_status:
         on_status("Downloading audio from YouTube...")
 
+    ffmpeg_dir = _get_ffmpeg_dir()
     ydl_opts = {
         'format': 'worstaudio/worst',
         'outtmpl': str(tmp_dir / 'audio.%(ext)s'),
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3',
-                            'preferredquality': '64'}],
         'quiet': True, 'no_warnings': True,
     }
-    ffmpeg_dir = _get_ffmpeg_dir()
     if ffmpeg_dir:
+        ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3',
+                                       'preferredquality': '64'}]
         ydl_opts['ffmpeg_location'] = ffmpeg_dir
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -128,11 +128,17 @@ def download_youtube_audio_for_groq(url, on_status=None):
         duration = info.get('duration', 0)
 
     audio_path = None
-    for ext in ['mp3', 'wav', 'webm', 'opus', 'm4a', 'flac']:
+    for ext in ['mp3', 'wav', 'webm', 'opus', 'm4a', 'flac', 'ogg']:
         p = tmp_dir / f'audio.{ext}'
         if p.exists():
             audio_path = str(p)
             break
+    if not audio_path:
+        # fallback: find any audio file in tmp_dir
+        for f in tmp_dir.iterdir():
+            if f.suffix.lower() in {'.mp3', '.wav', '.webm', '.opus', '.m4a', '.flac', '.ogg'}:
+                audio_path = str(f)
+                break
 
     if not audio_path:
         raise FileNotFoundError("Audio download failed")
