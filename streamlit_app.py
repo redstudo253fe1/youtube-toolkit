@@ -107,11 +107,13 @@ st.markdown(
 st.divider()
 
 # ── URL input ─────────────────────────────────────────────────
-url = st.text_input(
-    "YouTube URL",
-    placeholder="Paste YouTube URL or Video ID here...",
-    label_visibility="collapsed",
-)
+with st.form("url_form"):
+    url = st.text_input(
+        "YouTube URL",
+        placeholder="Paste YouTube URL or Video ID here...",
+        label_visibility="collapsed",
+    )
+    st.form_submit_button("▶ Load Video", use_container_width=True)
 
 if not url:
     st.markdown(
@@ -438,15 +440,18 @@ elif action == "🤖 AI Transcription (Groq)":
     st.caption("Free · Fast · 99+ languages · No GPU needed · 2 hrs audio/hour free")
 
     # ── API key ───────────────────────────────────────────────
-    saved_key = st.session_state.get("groq_key", "")
+    from youtube_toolkit.core.groq_engine import load_api_key, save_api_key
+    if "groq_key" not in st.session_state:
+        st.session_state["groq_key"] = load_api_key()
     api_key = st.text_input(
         "Groq API Key",
-        value=saved_key,
+        value=st.session_state["groq_key"],
         type="password",
         placeholder="gsk_... (free at console.groq.com/keys)",
     )
-    if api_key:
+    if api_key and api_key != st.session_state["groq_key"]:
         st.session_state["groq_key"] = api_key
+        save_api_key(api_key)
     if not api_key:
         st.info("👆 Get a **free** Groq API key at [console.groq.com/keys](https://console.groq.com/keys)")
 
