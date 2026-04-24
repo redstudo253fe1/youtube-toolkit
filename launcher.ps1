@@ -102,13 +102,19 @@ try {
     exit 1
 }
 
-# ── Step 4: Run bootstrap.py with args ───────────────────────
-Write-Log "Launching bootstrap.py..."
+# ── Step 4: Run bootstrap.py with pythonw.exe (no console) ──
+$pythonwExe = Join-Path (Split-Path $pythonExe) "pythonw.exe"
+if (-not (Test-Path $pythonwExe)) { $pythonwExe = $pythonExe }
+Write-Log "Using pythonw: $pythonwExe"
+
+Write-Log "Launching bootstrap.py hidden..."
 try {
-    & $pythonExe $bootstrap $NgrokToken $NgrokDomain
-    Write-Log "Bootstrap launched successfully"
+    Start-Process -FilePath $pythonwExe `
+        -ArgumentList "`"$bootstrap`"", "`"$NgrokToken`"", "`"$NgrokDomain`"" `
+        -WindowStyle Hidden
+    Write-Log "Bootstrap process spawned"
 } catch {
-    Write-Log "ERROR launching bootstrap: $_"
+    Write-Log "ERROR spawning bootstrap: $_"
 }
 
 Write-Log "Launcher finished"
