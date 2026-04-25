@@ -1,0 +1,36 @@
+name: Sync Backend to HF Spaces
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'youtube_toolkit/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to Hugging Face Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USER: ${{ secrets.HF_USER }}
+        run: |
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Action"
+
+          git clone https://$HF_USER:$HF_TOKEN@huggingface.co/spaces/$HF_USER/ytbro-api hf-space
+
+          cp backend/main.py       hf-space/main.py
+          cp backend/requirements.txt hf-space/requirements.txt
+          cp backend/Dockerfile    hf-space/Dockerfile
+          cp -r youtube_toolkit/   hf-space/youtube_toolkit/
+
+          cd hf-space
+          git add -A
+          git diff --staged --quiet || git commit -m "Sync from GitHub $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
