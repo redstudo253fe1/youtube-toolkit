@@ -67,7 +67,7 @@ def _search_dict(obj, key):
             stack.extend(cur)
 
 
-def _parse_comments(data):
+def _parse_comments(data, owner_channel_id=None):
     """Extract comments, next-page continuations, reply continuations from innertube response."""
     comments, next_conts, reply_conts = [], [], []
     actions = (
@@ -121,6 +121,9 @@ def _parse_comments(data):
                 "photo": author.get("avatarThumbnailUrl", ""),
                 "heart": ts.get("heartState", "") == "TOOLBAR_HEART_STATE_HEARTED",
                 "reply": "." in cid,
+                "is_creator": bool(
+                    owner_channel_id and author.get("channelId") == owner_channel_id
+                ),
             })
         except (KeyError, TypeError):
             continue
@@ -129,10 +132,17 @@ def _parse_comments(data):
 
 def _get_sort_menu(video_id):
     """
-    Use innertube /next (POST) to get comment sort continuations.
-    Returns list of sort menu items (index 0 = popular, 1 = recent).
+    Use innertube /next (POST) to get comment sort continuations + owner channel ID.
+    Returns (sort_menu, owner_channel_id).
     """
     data = _innertube_post("next", {"context": _CTX, "videoId": video_id})
+
+    # Extract video owner channel ID (UC... format) from the response
+    owner_channel_id = next(
+        (bid for bid in _search_dict(data, "browseId") if isinstance(bid, str) and bid.startswith("UC")),
+        None,
+    )
+
     sort_menu = next(_search_dict(data, "sortFilterSubMenuRenderer"), {}).get("subMenuItems", [])
 
     if not sort_menu:
@@ -147,7 +157,7 @@ def _get_sort_menu(video_id):
             if sort_menu:
                 break
 
-    return sort_menu
+    return sort_menu, owner_channel_id
 
 
 async def _async_innertube(session, endpoint, payload):
@@ -203,7 +213,7 @@ async def _async_innertube_batch(session, payloads):
     return [{} for _ in payloads]
 
 
-async def _fetch_replies(session, cont_ep, results, stats):
+async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None):
     conts = [cont_ep]
     while conts:
         ep = conts.pop(0)
@@ -218,7 +228,7 @@ async def _fetch_replies(session, cont_ep, results, stats):
         resp = await _async_innertube(session, "next", {"context": _CTX, "continuation": token})
         if not resp:
             break
-        comments, _, more = _parse_comments(resp)
+        comments, _, more = _parse_comments(resp, owner_channel_id)
         results.extend(comments)
         stats["replies"] += len(comments)
         for ep2 in more:
@@ -231,7 +241,7 @@ async def _fetch_replies(session, cont_ep, results, stats):
                 conts.append(ep2)
 
 
-async def _download_async(video_id, sort_by, max_comments, on_progress, sort_menu):
+async def _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id=None):
     if not sort_menu or sort_by >= len(sort_menu):
         raise RuntimeError("Could not get comment sort menu from YouTube.")
 
@@ -277,7 +287,7 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
                     continue
                 got_any = True
 
-                comments, next_c, reply_c = _parse_comments(resp)
+                comments, next_c, reply_c = _parse_comments(resp, owner_channel_id)
                 for c in comments:
                     if not c["reply"]:
                         all_top.append(c)
@@ -294,7 +304,7 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
                 # Launch reply fetchers as background tasks
                 for ep in reply_c:
                     task = asyncio.ensure_future(
-                        _fetch_replies(session, ep, all_replies, stats)
+                        _fetch_replies(session, ep, all_replies, stats, owner_channel_id)
                     )
                     reply_tasks.append(task)
 
@@ -349,13 +359,13 @@ def download_comments(video_url, sort_by=SORT_BY_RECENT, max_comments=0, on_prog
     except Exception:
         title = video_id
 
-    sort_menu = _get_sort_menu(video_id)
+    sort_menu, owner_channel_id = _get_sort_menu(video_id)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         raw = loop.run_until_complete(
-            _download_async(video_id, sort_by, max_comments, on_progress, sort_menu)
+            _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id)
         )
     finally:
         loop.close()
@@ -387,6 +397,7 @@ def build_structured_comments(raw_comments):
             "is_reply": is_reply, "parent_author": auth_display,
             "parent_comment_number": pn, "parent_text_preview": pp,
             "comment_id": cid, "heart": raw.get("heart", False),
+            "is_creator": raw.get("is_creator", False),
         })
     return comments
 
