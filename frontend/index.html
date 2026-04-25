@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ytbro — Analyze YouTube with AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#07070f;--surface:#0e0e1c;--surface2:#14142a;--surface3:#1a1a35;
+  --border:rgba(124,58,237,.18);--border2:rgba(255,255,255,.07);
+  --a1:#7c3aed;--a2:#e94560;
+  --grad:linear-gradient(135deg,#7c3aed,#e94560);
+  --text:#e2e8f0;--muted:#6b7280;--muted2:#4b5563;
+  --success:#10b981;--error:#ef4444;--warn:#f59e0b;
+  --r:14px;--r2:10px;--r3:8px;
+}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--surface)}
+::-webkit-scrollbar-thumb{background:var(--a1);border-radius:3px}
+
+/* ── Navbar ── */
+nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);padding:.9rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:1.35rem;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.02em}
+.logo span{font-weight:300;opacity:.7}
+.nav-badge{font-size:.72rem;background:var(--surface2);color:var(--muted);border:1px solid var(--border2);padding:.2rem .6rem;border-radius:20px}
+
+/* ── Layout ── */
+.container{max-width:1100px;margin:0 auto;padding:0 1.25rem}
+.hidden{display:none!important}
+
+/* ── Hero ── */
+#hero{padding:4rem 0 3rem;text-align:center}
+.hero-eyebrow{font-size:.78rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--a1);margin-bottom:1rem}
+.hero-title{font-size:clamp(2rem,5vw,3.2rem);font-weight:800;line-height:1.15;letter-spacing:-.03em;margin-bottom:.8rem}
+.hero-title .grad{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-sub{color:var(--muted);font-size:1.05rem;margin-bottom:2.5rem;max-width:500px;margin-left:auto;margin-right:auto}
+
+/* ── URL Input ── */
+.url-box{display:flex;gap:.6rem;max-width:660px;margin:0 auto;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:.55rem .55rem .55rem .9rem;transition:border-color .2s}
+.url-box:focus-within{border-color:var(--a1)}
+.url-box input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:1rem;font-family:inherit;min-width:0}
+.url-box input::placeholder{color:var(--muted2)}
+.btn-go{background:var(--grad);color:#fff;border:none;border-radius:var(--r3);padding:.65rem 1.4rem;font-weight:700;font-size:.95rem;cursor:pointer;white-space:nowrap;transition:opacity .2s,transform .15s;display:flex;align-items:center;gap:.4rem}
+.btn-go:hover{opacity:.88;transform:translateY(-1px)}
+.btn-go:active{transform:translateY(0)}
+.btn-go svg{width:16px;height:16px}
+
+/* ── Feature pills ── */
+.pills{display:flex;justify-content:center;gap:.7rem;flex-wrap:wrap;margin-top:2rem}
+.pill{display:flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:.4rem .9rem;font-size:.8rem;color:var(--muted);font-weight:500}
+.pill span{font-size:.95rem}
+
+/* ── Video info card ── */
+#video-info{padding:1.5rem 0}
+.video-card{display:flex;gap:1.2rem;align-items:center;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.1rem 1.3rem}
+.video-thumb{width:120px;height:68px;border-radius:var(--r3);object-fit:cover;flex-shrink:0;background:var(--surface2)}
+.video-meta h3{font-size:1rem;font-weight:600;line-height:1.35;margin-bottom:.3rem}
+.video-id{font-size:.78rem;color:var(--muted);font-family:monospace;background:var(--surface2);padding:.15rem .5rem;border-radius:4px;display:inline-block}
+
+/* ── Action tabs ── */
+#actions{padding:.5rem 0 1.5rem}
+.tabs{display:flex;gap:.5rem;margin-bottom:1.2rem}
+.tab{flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem;background:var(--surface);border:1.5px solid var(--border2);border-radius:var(--r2);cursor:pointer;font-weight:600;font-size:.9rem;color:var(--muted);transition:all .2s}
+.tab:hover{border-color:var(--a1);color:var(--text)}
+.tab.active{border-color:var(--a1);color:var(--text);background:rgba(124,58,237,.1)}
+.tab-icon{font-size:1.1rem}
+
+/* ── Options panel ── */
+.options-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.3rem}
+.opt-row{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:1rem}
+.opt-group label{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.06em}
+.opt-group select,.opt-group input[type=number],.opt-group input[type=text],.opt-group input[type=password]{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.55rem .75rem;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;transition:border-color .2s}
+.opt-group select:focus,.opt-group input:focus{border-color:var(--a1)}
+.opt-group select option{background:var(--surface2)}
+.lang-list{max-height:160px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);margin-top:.4rem}
+.lang-item{padding:.5rem .8rem;cursor:pointer;font-size:.88rem;display:flex;justify-content:space-between;align-items:center;transition:background .15s}
+.lang-item:hover,.lang-item.selected{background:rgba(124,58,237,.15)}
+.lang-badge{font-size:.7rem;background:var(--surface);color:var(--muted);padding:.1rem .4rem;border-radius:4px}
+.check-langs-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--r3);padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;width:100%;transition:all .2s;margin-bottom:.7rem}
+.check-langs-btn:hover{background:rgba(124,58,237,.15)}
+.btn-main{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;background:var(--grad);color:#fff;border:none;border-radius:var(--r3);font-weight:700;font-size:.95rem;cursor:pointer;transition:opacity .2s,transform .15s;margin-top:.5rem}
+.btn-main:hover{opacity:.88;transform:translateY(-1px)}
+.btn-main:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-top:1px solid var(--border2);margin-top:.8rem}
+.toggle-label{font-size:.85rem;color:var(--muted);font-weight:500}
+.toggle{position:relative;width:40px;height:22px}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:var(--surface3);border-radius:11px;cursor:pointer;transition:.3s}
+.toggle-slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}
+.toggle input:checked+.toggle-slider{background:var(--a1)}
+.toggle input:checked+.toggle-slider:before{transform:translateX(18px)}
+
+/* ── Processing ── */
+#processing{padding:1.5rem 0}
+.proc-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.3rem}
+.proc-header{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}
+.spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--a1);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.proc-title{font-weight:600;font-size:.95rem}
+.log-box{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.8rem 1rem;font-size:.82rem;font-family:monospace;color:#a5f3fc;max-height:220px;overflow-y:auto;line-height:1.7}
+.log-line{padding:.05rem 0}
+.log-line.err{color:var(--error)}
+.log-line.ok{color:var(--success)}
+
+/* ── Result ── */
+#result{padding:1.5rem 0}
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+@media(max-width:720px){.result-grid{grid-template-columns:1fr}.opt-row{grid-template-columns:1fr}}
+.result-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.result-card-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between}
+.result-card-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}
+.result-card-body{padding:1.1rem;flex:1;overflow:hidden}
+.content-preview{font-size:.82rem;color:var(--muted);line-height:1.65;max-height:260px;overflow-y:auto;white-space:pre-wrap;font-family:monospace}
+.result-actions{padding:.9rem 1.1rem;border-top:1px solid var(--border2);display:flex;gap:.6rem;flex-wrap:wrap}
+.btn-dl{display:flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--r3);padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
+.btn-dl:hover{background:rgba(124,58,237,.15);border-color:var(--a1)}
+.btn-chat{display:flex;align-items:center;gap:.4rem;background:var(--grad);color:#fff;border:none;border-radius:var(--r3);padding:.5rem 1.1rem;font-size:.85rem;font-weight:700;cursor:pointer;transition:opacity .2s}
+.btn-chat:hover{opacity:.85}
+.ai-link-box{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:var(--r3);padding:.7rem .9rem;margin-top:.8rem;font-size:.8rem}
+.ai-link-label{color:var(--success);font-weight:600;margin-bottom:.3rem}
+.ai-link-url{color:var(--text);font-family:monospace;word-break:break-all;font-size:.78rem}
+.copy-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:.15rem .5rem;font-size:.72rem;cursor:pointer;margin-left:.5rem;vertical-align:middle;transition:all .2s}
+.copy-btn:hover{border-color:var(--a1);color:var(--text)}
+
+/* ── Chat panel ── */
+#chat-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;height:100%;min-height:420px}
+.chat-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem}
+.chat-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}
+.chat-controls{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.model-select{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);color:var(--text);font-size:.8rem;padding:.35rem .6rem;outline:none;cursor:pointer;font-family:inherit}
+.think-toggle{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--muted);cursor:pointer}
+.think-toggle input{accent-color:var(--a1)}
+.chat-messages{flex:1;overflow-y:auto;padding:.9rem 1rem;display:flex;flex-direction:column;gap:.8rem}
+.msg{display:flex;flex-direction:column;gap:.25rem;max-width:85%}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.assistant{align-self:flex-start;align-items:flex-start}
+.msg-bubble{padding:.7rem .95rem;border-radius:var(--r2);font-size:.88rem;line-height:1.6;word-break:break-word}
+.msg.user .msg-bubble{background:var(--grad);color:#fff;border-bottom-right-radius:4px}
+.msg.assistant .msg-bubble{background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-bottom-left-radius:4px}
+.msg.assistant .msg-bubble h1,.msg.assistant .msg-bubble h2,.msg.assistant .msg-bubble h3{font-size:1em;font-weight:700;margin:.4rem 0 .2rem}
+.msg.assistant .msg-bubble p{margin:.3rem 0}
+.msg.assistant .msg-bubble ul,.msg.assistant .msg-bubble ol{padding-left:1.2rem;margin:.3rem 0}
+.msg.assistant .msg-bubble code{background:rgba(255,255,255,.08);padding:.1rem .3rem;border-radius:3px;font-family:monospace;font-size:.85em}
+.msg.assistant .msg-bubble pre{background:rgba(0,0,0,.3);border:1px solid var(--border2);border-radius:6px;padding:.7rem;overflow-x:auto;margin:.5rem 0}
+.msg.assistant .msg-bubble pre code{background:none;padding:0}
+.msg-meta{font-size:.7rem;color:var(--muted2)}
+.thinking-bubble{background:rgba(124,58,237,.08);border:1px dashed rgba(124,58,237,.3);border-radius:var(--r2);padding:.6rem .9rem;font-size:.82rem;color:var(--a1);display:flex;align-items:center;gap:.5rem}
+.typing-dots span{display:inline-block;width:5px;height:5px;background:var(--a1);border-radius:50%;animation:bounce .9s infinite}
+.typing-dots span:nth-child(2){animation-delay:.15s}
+.typing-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
+.chat-input-area{padding:.8rem;border-top:1px solid var(--border2);background:var(--surface)}
+.upload-preview{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}
+.upload-chip{display:flex;align-items:center;gap:.3rem;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:.2rem .5rem;font-size:.75rem;color:var(--muted)}
+.upload-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;line-height:1}
+.chat-row{display:flex;gap:.5rem;align-items:flex-end}
+.chat-input{flex:1;background:var(--surface2);border:1.5px solid var(--border2);border-radius:var(--r3);padding:.65rem .85rem;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;resize:none;max-height:120px;line-height:1.5;transition:border-color .2s}
+.chat-input:focus{border-color:var(--a1)}
+.chat-btns{display:flex;gap:.4rem;flex-shrink:0}
+.btn-upload{background:var(--surface2);border:1px solid var(--border2);color:var(--muted);border-radius:var(--r3);width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:all .2s}
+.btn-upload:hover{border-color:var(--a1);color:var(--text)}
+.btn-send{background:var(--grad);color:#fff;border:none;border-radius:var(--r3);width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:opacity .2s}
+.btn-send:hover{opacity:.85}
+.btn-send:disabled{opacity:.4;cursor:not-allowed}
+.btn-clear{background:none;border:1px solid var(--border2);color:var(--muted);border-radius:var(--r3);padding:.3rem .7rem;font-size:.75rem;cursor:pointer;transition:all .2s}
+.btn-clear:hover{border-color:var(--error);color:var(--error)}
+
+/* ── Empty state / tips ── */
+.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:.5rem;padding:1.5rem;text-align:center}
+.chat-empty-icon{font-size:2rem;opacity:.4}
+.chat-empty p{font-size:.85rem}
+.tip-chips{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:.7rem}
+.tip{background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:.35rem .8rem;font-size:.78rem;cursor:pointer;color:var(--muted);transition:all .2s}
+.tip:hover{border-color:var(--a1);color:var(--text)}
+
+/* ── Stats bar ── */
+.stats-bar{display:flex;gap:1.2rem;flex-wrap:wrap;padding:.7rem 1.1rem;background:rgba(16,185,129,.05);border-top:1px solid rgba(16,185,129,.15)}
+.stat{display:flex;align-items:center;gap:.35rem;font-size:.8rem}
+.stat-val{font-weight:700;color:var(--success)}
+.stat-lbl{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav>
+  <div class="logo">yt<span>bro</span></div>
+  <div class="nav-badge">AI-Powered YouTube Analyzer</div>
+</nav>
+
+<!-- Hero / URL input (always visible) -->
+<div class="container">
+<section id="hero">
+  <div class="hero-eyebrow">Free · No Sign Up · Instant</div>
+  <h1 class="hero-title">Analyze YouTube<br>with <span class="grad">AI</span></h1>
+  <p class="hero-sub">Download comments, captions & transcripts — then chat with any AI model about it</p>
+
+  <div class="url-box">
+    <input id="url-input" type="text" placeholder="Paste YouTube URL or video ID…" autocomplete="off" spellcheck="false"/>
+    <button class="btn-go" id="btn-analyze" onclick="analyzeUrl()">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+      Analyze
+    </button>
+  </div>
+
+  <div class="pills">
+    <div class="pill"><span>💬</span> Comments</div>
+    <div class="pill"><span>📝</span> Captions</div>
+    <div class="pill"><span>🎙️</span> AI Transcription</div>
+    <div class="pill"><span>🤖</span> Chat with Claude · GPT-5 · Gemini</div>
+  </div>
+</section>
+
+<!-- Video info -->
+<section id="video-info" class="hidden">
+  <div class="video-card">
+    <img id="vid-thumb" class="video-thumb" src="" alt="thumbnail"/>
+    <div class="video-meta">
+      <h3 id="vid-title">Loading…</h3>
+      <span id="vid-id" class="video-id"></span>
+    </div>
+  </div>
+</section>
+
+<!-- Action tabs + options -->
+<section id="actions" class="hidden">
+  <div class="tabs">
+    <div class="tab active" id="tab-comments" onclick="switchTab('comments')">
+      <span class="tab-icon">💬</span> Comments
+    </div>
+    <div class="tab" id="tab-captions" onclick="switchTab('captions')">
+      <span class="tab-icon">📝</span> Captions
+    </div>
+    <div class="tab" id="tab-transcribe" onclick="switchTab('transcribe')">
+      <span class="tab-icon">🎙️</span> Transcribe
+    </div>
+  </div>
+
+  <!-- Comments options -->
+  <div id="opt-comments" class="options-panel">
+    <div class="opt-row">
+      <div class="opt-group">
+        <label>Sort By</label>
+        <select id="sort-mode"><option value="recent">Recent</option><option value="popular">Popular</option></select>
+      </div>
+      <div class="opt-group">
+        <label>Max Comments (0 = all)</label>
+        <input type="number" id="max-comments" value="0" min="0" step="100"/>
+      </div>
+    </div>
+    <button class="btn-main" onclick="startDownload('comments')">
+      <span>⬇️</span> Download Comments
+    </button>
+  </div>
+
+  <!-- Captions options -->
+  <div id="opt-captions" class="options-panel hidden">
+    <button class="check-langs-btn" onclick="checkLanguages()">🔍 Check Available Languages</button>
+    <div id="lang-list-wrap" class="hidden">
+      <div class="opt-group">
+        <label>Select Language</label>
+        <div class="lang-list" id="lang-list"></div>
+      </div>
+    </div>
+    <button class="btn-main" id="btn-dl-captions" onclick="startDownload('captions')" style="margin-top:.8rem">
+      <span>⬇️</span> Download Captions
+    </button>
+  </div>
+
+  <!-- Transcribe options -->
+  <div id="opt-transcribe" class="options-panel hidden">
+    <div class="opt-row">
+      <div class="opt-group">
+        <label>Groq API Key <a href="https://console.groq.com/keys" target="_blank" style="color:var(--a1);font-size:.75rem;text-decoration:none">(free)</a></label>
+        <input type="password" id="groq-key" placeholder="gsk_…" oninput="saveGroqKey(this.value)"/>
+      </div>
+      <div class="opt-group">
+        <label>Model</label>
+        <select id="groq-model">
+          <option value="whisper-large-v3">whisper-large-v3 (best)</option>
+          <option value="whisper-large-v3-turbo">whisper-large-v3-turbo (fast)</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn-main" onclick="startDownload('transcribe')">
+      <span>🎙️</span> Generate Transcript
+    </button>
+  </div>
+</section>
+
+<!-- Processing -->
+<section id="processing" class="hidden">
+  <div class="proc-card">
+    <div class="proc-header">
+      <div class="spinner"></div>
+      <div class="proc-title" id="proc-title">Processing…</div>
+    </div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+</section>
+
+<!-- Result -->
+<section id="result" class="hidden">
+  <div class="result-grid">
+    <!-- Content preview -->
+    <div class="result-card">
+      <div class="result-card-header">
+        <div class="result-card-title"><span id="result-icon">📄</span> <span id="result-label">Content</span></div>
+        <div id="result-stats" style="font-size:.78rem;color:var(--muted)"></div>
+      </div>
+      <div class="result-card-body">
+        <div class="content-preview" id="content-preview"></div>
+        <div id="ai-link-box" class="ai-link-box hidden">
+          <div class="ai-link-label">🤖 AI-Readable Link</div>
+          <div class="ai-link-url" id="ai-link-url"></div>
+          <button class="copy-btn" onclick="copyAiLink()">Copy</button>
+        </div>
+      </div>
+      <div class="result-actions">
+        <a id="btn-download" class="btn-dl" href="#" download>
+          <span>⬇️</span> Download .md
+        </a>
+        <button class="btn-chat" onclick="openChat()">
+          <span>🤖</span> Analyze with AI
+        </button>
+      </div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chat-panel" class="result-card">
+      <div class="chat-header">
+        <div class="chat-title">🤖 AI Chat</div>
+        <div class="chat-controls">
+          <select class="model-select" id="chat-model">
+            <option value="claude">Claude (Sonnet)</option>
+            <option value="claude-opus">Claude Opus</option>
+            <option value="gpt-5.4">GPT-5.4</option>
+            <option value="gemini">Gemini</option>
+            <option value="sonar-pro">Sonar Pro</option>
+            <option value="sonar">Sonar</option>
+            <option value="r1">DeepSeek R1</option>
+            <option value="reasoning">Reasoning</option>
+            <option value="deep-research">Deep Research</option>
+          </select>
+          <label class="think-toggle">
+            <input type="checkbox" id="thinking-toggle"/> Thinking
+          </label>
+          <button class="btn-clear" onclick="clearChat()">Clear</button>
+        </div>
+      </div>
+      <div class="chat-messages" id="chat-messages">
+        <div class="chat-empty" id="chat-empty">
+          <div class="chat-empty-icon">🤖</div>
+          <p>Click <strong>Analyze with AI</strong> to start chatting about your content</p>
+          <div class="tip-chips">
+            <div class="tip" onclick="sendTip(this)">Summarize this</div>
+            <div class="tip" onclick="sendTip(this)">Key themes?</div>
+            <div class="tip" onclick="sendTip(this)">What's the sentiment?</div>
+            <div class="tip" onclick="sendTip(this)">Top comments</div>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="file-upload" multiple accept="image/*,.pdf,.txt,.md,.csv" style="display:none" onchange="handleFiles(this)"/>
+      <div class="chat-input-area">
+        <div class="upload-preview" id="upload-preview"></div>
+        <div class="chat-row">
+          <textarea class="chat-input" id="chat-input" rows="1" placeholder="Ask about the content…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <div class="chat-btns">
+            <button class="btn-upload" onclick="document.getElementById('file-upload').click()" title="Attach image/file">📎</button>
+            <button class="btn-send" id="btn-send" onclick="sendMessage()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2"><path d="M14 2L2 8l4 2 2 4 6-12z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<script>
+// ── Config ────────────────────────────────────────────────────
+const BACKEND = 'https://HFUSER-ytbro-api.hf.space';
+const AI_API  = 'https://api-hoot.onrender.com/v1/chat/completions';
+
+// ── State ─────────────────────────────────────────────────────
+let state = {
+  videoId: '',
+  videoUrl: '',
+  currentTab: 'comments',
+  selectedLang: null,
+  result: null,        // {content, title, filename, aiUrl}
+  chatHistory: [],
+  uploadedFiles: [],   // [{name, dataUri}]
+  contextLoaded: false,
+};
+
+// ── Init ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('groq_key');
+  if (saved) document.getElementById('groq-key').value = saved;
+
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') analyzeUrl();
+  });
+});
+
+// ── URL analyze ───────────────────────────────────────────────
+async function analyzeUrl() {
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) return;
+
+  setHero(false);
+  show('video-info');
+  document.getElementById('vid-title').textContent = 'Loading…';
+
+  try {
+    const res = await fetch(`${BACKEND}/api/video/info`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url}),
+    });
+    const data = await res.json();
+    if (data.error) { alert('Invalid YouTube URL'); return; }
+
+    state.videoId = data.video_id;
+    state.videoUrl = data.url;
+
+    document.getElementById('vid-thumb').src = data.thumbnail;
+    document.getElementById('vid-title').textContent = data.title;
+    document.getElementById('vid-id').textContent = data.video_id;
+
+    show('actions');
+    switchTab('comments');
+    hide('result');
+    hide('processing');
+  } catch (e) {
+    alert('Could not reach backend. Is the HF Space running?');
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────
+function switchTab(tab) {
+  state.currentTab = tab;
+  ['comments','captions','transcribe'].forEach(t => {
+    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);
+    document.getElementById(`opt-${t}`).classList.toggle('hidden', t !== tab);
+  });
+}
+
+// ── Language check ────────────────────────────────────────────
+async function checkLanguages() {
+  const btn = document.querySelector('.check-langs-btn');
+  btn.textContent = '⏳ Checking…';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${BACKEND}/api/captions/languages`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: state.videoUrl}),
+    });
+    const data = await res.json();
+    const list = document.getElementById('lang-list');
+    list.innerHTML = '';
+
+    [...(data.manual||[]).map(l => ({...l, type:'manual'})),
+     ...(data.auto||[]).map(l => ({...l, type:'auto'}))]
+      .forEach(lang => {
+        const div = document.createElement('div');
+        div.className = 'lang-item';
+        div.innerHTML = `${lang.name} <span class="lang-badge">${lang.type}</span>`;
+        div.onclick = () => {
+          document.querySelectorAll('.lang-item').forEach(el => el.classList.remove('selected'));
+          div.classList.add('selected');
+          state.selectedLang = {code: lang.code, name: lang.name};
+        };
+        list.appendChild(div);
+      });
+
+    show('lang-list-wrap');
+    btn.textContent = '✅ Languages loaded';
+  } catch (e) {
+    btn.textContent = '❌ Failed — retry';
+    btn.disabled = false;
+  }
+}
+
+// ── Start download / generation ───────────────────────────────
+async function startDownload(type) {
+  hide('actions');
+  show('processing');
+  hide('result');
+  state.result = null;
+  state.chatHistory = [];
+  state.contextLoaded = false;
+
+  const log = document.getElementById('log-box');
+  log.innerHTML = '';
+
+  const titles = {
+    comments: '💬 Downloading comments…',
+    captions: '📝 Downloading captions…',
+    transcribe: '🎙️ Generating AI transcript…',
+  };
+  document.getElementById('proc-title').textContent = titles[type];
+
+  let endpoint, body;
+
+  if (type === 'comments') {
+    endpoint = '/api/comments';
+    body = {
+      url: state.videoUrl,
+      sort: document.getElementById('sort-mode').value,
+      max_comments: parseInt(document.getElementById('max-comments').value) || 0,
+    };
+  } else if (type === 'captions') {
+    if (!state.selectedLang) { alert('Please select a language first.'); show('actions'); hide('processing'); return; }
+    endpoint = '/api/captions/download';
+    body = {url: state.videoUrl, lang_code: state.selectedLang.code, lang_name: state.selectedLang.name};
+  } else {
+    const key = document.getElementById('groq-key').value.trim();
+    if (!key) { alert('Enter your Groq API key first.'); show('actions'); hide('processing'); return; }
+    endpoint = '/api/transcribe';
+    body = {
+      url: state.videoUrl,
+      api_key: key,
+      model: document.getElementById('groq-model').value,
+    };
+  }
+
+  try {
+    const evtSource = new EventSource(`${BACKEND}${endpoint}?${new URLSearchParams()}`);
+
+    const res = await fetch(`${BACKEND}${endpoint}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const {done, value} = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, {stream: true});
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const evt = JSON.parse(line.slice(6));
+          if (evt.type === 'progress') {
+            addLog(log, evt.message);
+          } else if (evt.type === 'result') {
+            state.result = evt;
+            addLog(log, '✅ Done!', 'ok');
+          } else if (evt.type === 'error') {
+            addLog(log, '❌ ' + evt.message, 'err');
+          } else if (evt.type === 'done') {
+            showResult(type);
+            return;
+          }
+        } catch {}
+      }
+    }
+    showResult(type);
+  } catch (err) {
+    addLog(log, '❌ Error: ' + err.message, 'err');
+  }
+}
+
+function addLog(box, msg, cls='') {
+  const div = document.createElement('div');
+  div.className = 'log-line' + (cls ? ' ' + cls : '');
+  div.textContent = '> ' + msg;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Show result ───────────────────────────────────────────────
+function showResult(type) {
+  hide('processing');
+  show('result');
+
+  if (!state.result) return;
+
+  const icons = {comments:'💬', captions:'📝', transcribe:'🎙️'};
+  const labels = {comments:'Comments', captions:'Captions', transcribe:'Transcript'};
+  document.getElementById('result-icon').textContent = icons[type];
+  document.getElementById('result-label').textContent = labels[type];
+
+  // Stats
+  const s = state.result.stats || {};
+  let statHtml = '';
+  if (s.total) statHtml += `<span class="stat"><span class="stat-val">${s.total.toLocaleString()}</span><span class="stat-lbl"> comments</span></span>`;
+  if (s.words) statHtml += `<span class="stat"><span class="stat-val">${s.words.toLocaleString()}</span><span class="stat-lbl"> words</span></span>`;
+  if (s.duration) statHtml += `<span class="stat"><span class="stat-val">${s.duration}</span><span class="stat-lbl"> duration</span></span>`;
+  if (s.language) statHtml += `<span class="stat"><span class="stat-val">${s.language}</span><span class="stat-lbl"> lang</span></span>`;
+  document.getElementById('result-stats').innerHTML = statHtml;
+
+  // Preview
+  document.getElementById('content-preview').textContent =
+    (state.result.content || '').substring(0, 1500) + (state.result.content?.length > 1500 ? '\n…' : '');
+
+  // AI link
+  if (state.result.ai_url) {
+    document.getElementById('ai-link-url').textContent = state.result.ai_url;
+    show('ai-link-box');
+  }
+
+  // Download button
+  const blob = new Blob([state.result.content || ''], {type: 'text/markdown'});
+  const dl = document.getElementById('btn-download');
+  dl.href = URL.createObjectURL(blob);
+  dl.download = state.result.filename || 'content.md';
+}
+
+// ── Open chat ─────────────────────────────────────────────────
+function openChat() {
+  if (!state.result || state.contextLoaded) return;
+  state.contextLoaded = true;
+
+  const title = state.result.title || 'this YouTube video';
+  const content = (state.result.content || '').substring(0, 15000);
+
+  // Add content as system context (first user message, silently)
+  state.chatHistory = [
+    {
+      role: 'system',
+      content: `You are an AI assistant analyzing YouTube content.\nVideo title: "${title}"\nHere is the downloaded content:\n\n${content}\n\nHelp the user understand, summarize, and analyze this content. Be direct and insightful.`,
+    }
+  ];
+
+  const msgs = document.getElementById('chat-messages');
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+
+  appendMsg('assistant',
+    `I've loaded the content from **"${title}"**.\n\nAsk me anything — I can summarize, find patterns, answer specific questions, or analyze sentiment.`);
+
+  document.getElementById('chat-input').focus();
+}
+
+// ── Send tip ──────────────────────────────────────────────────
+function sendTip(el) {
+  openChat();
+  document.getElementById('chat-input').value = el.textContent;
+  sendMessage();
+}
+
+// ── Send message ──────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text && state.uploadedFiles.length === 0) return;
+
+  if (!state.contextLoaded) openChat();
+
+  const btn = document.getElementById('btn-send');
+  btn.disabled = true;
+  input.value = '';
+  input.style.height = 'auto';
+
+  // Build content array for multimodal
+  let content;
+  if (state.uploadedFiles.length > 0) {
+    content = [{type: 'text', text}];
+    state.uploadedFiles.forEach(f => {
+      if (f.dataUri.startsWith('data:image')) {
+        content.push({type: 'image_url', image_url: {url: f.dataUri}});
+      }
+    });
+  } else {
+    content = text;
+  }
+
+  appendMsg('user', text, state.uploadedFiles.map(f => f.name));
+  state.uploadedFiles = [];
+  document.getElementById('upload-preview').innerHTML = '';
+
+  state.chatHistory.push({role: 'user', content});
+
+  const model = document.getElementById('chat-model').value;
+  const thinking = document.getElementById('thinking-toggle').checked;
+
+  // Show typing indicator
+  const typingId = 'typing-' + Date.now();
+  appendTyping(typingId);
+
+  try {
+    const res = await fetch(AI_API, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        model,
+        thinking,
+        messages: state.chatHistory,
+      }),
+    });
+    const data = await res.json();
+    const reply = data.choices?.[0]?.message?.content || '(No response)';
+
+    removeTyping(typingId);
+    appendMsg('assistant', reply);
+    state.chatHistory.push({role: 'assistant', content: reply});
+  } catch (err) {
+    removeTyping(typingId);
+    appendMsg('assistant', `❌ Error: ${err.message}`);
+  }
+
+  btn.disabled = false;
+  document.getElementById('chat-input').focus();
+}
+
+function appendMsg(role, text, fileNames=[]) {
+  const msgs = document.getElementById('chat-messages');
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+
+  const wrap = document.createElement('div');
+  wrap.className = `msg ${role}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+
+  if (role === 'assistant') {
+    bubble.innerHTML = marked.parse(text);
+  } else {
+    bubble.textContent = text;
+    if (fileNames.length) {
+      fileNames.forEach(n => {
+        const chip = document.createElement('div');
+        chip.style.cssText = 'font-size:.72rem;opacity:.7;margin-top:.3rem';
+        chip.textContent = '📎 ' + n;
+        bubble.appendChild(chip);
+      });
+    }
+  }
+
+  const meta = document.createElement('div');
+  meta.className = 'msg-meta';
+  meta.textContent = role === 'user' ? 'You' : document.getElementById('chat-model').value;
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(meta);
+  msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendTyping(id) {
+  const msgs = document.getElementById('chat-messages');
+  const div = document.createElement('div');
+  div.id = id;
+  div.className = 'msg assistant';
+  div.innerHTML = `<div class="msg-bubble typing-dots"><span></span><span></span><span></span></div>`;
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function removeTyping(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ── File upload ───────────────────────────────────────────────
+function handleFiles(input) {
+  const preview = document.getElementById('upload-preview');
+  Array.from(input.files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      state.uploadedFiles.push({name: file.name, dataUri: e.target.result});
+      const chip = document.createElement('div');
+      chip.className = 'upload-chip';
+      chip.innerHTML = `📎 ${file.name} <button onclick="removeFile('${file.name}',this.parentElement)">×</button>`;
+      preview.appendChild(chip);
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+
+function removeFile(name, el) {
+  state.uploadedFiles = state.uploadedFiles.filter(f => f.name !== name);
+  el.remove();
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function clearChat() {
+  state.chatHistory = [];
+  state.contextLoaded = false;
+  document.getElementById('chat-messages').innerHTML =
+    `<div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-icon">🤖</div>
+      <p>Click <strong>Analyze with AI</strong> to start chatting about your content</p>
+      <div class="tip-chips">
+        <div class="tip" onclick="sendTip(this)">Summarize this</div>
+        <div class="tip" onclick="sendTip(this)">Key themes?</div>
+        <div class="tip" onclick="sendTip(this)">What's the sentiment?</div>
+        <div class="tip" onclick="sendTip(this)">Top comments</div>
+      </div>
+    </div>`;
+}
+
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+}
+
+function autoResize(el) {
+  el.style.height = 'auto';
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+}
+
+function saveGroqKey(val) { localStorage.setItem('groq_key', val); }
+
+function copyAiLink() {
+  navigator.clipboard.writeText(document.getElementById('ai-link-url').textContent);
+  document.querySelector('.copy-btn').textContent = 'Copied!';
+  setTimeout(() => document.querySelector('.copy-btn').textContent = 'Copy', 2000);
+}
+
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+function setHero(visible) {
+  const el = document.getElementById('hero');
+  el.style.paddingTop = visible ? '4rem' : '1.5rem';
+  el.querySelector('.hero-eyebrow').style.display = visible ? '' : 'none';
+  el.querySelector('.hero-title').style.display = visible ? '' : 'none';
+  el.querySelector('.hero-sub').style.display = visible ? '' : 'none';
+  el.querySelector('.pills').style.display = visible ? '' : 'none';
+}
+</script>
+</body>
+</html>
