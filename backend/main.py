@@ -65,13 +65,18 @@ def health():
 # ── Video info ────────────────────────────────────────────────
 @app.post("/api/video/info")
 async def video_info(body: dict):
-    from youtube_toolkit.core.utils import extract_video_id, get_video_title
+    import requests as req
+    from youtube_toolkit.core.utils import extract_video_id
     url = body.get("url", "")
     video_id = extract_video_id(url)
     if not video_id:
         return {"error": "Invalid YouTube URL"}
     try:
-        title = get_video_title(video_id)
+        r = req.get(
+            f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json",
+            timeout=8
+        )
+        title = r.json().get("title", video_id) if r.ok else video_id
     except Exception:
         title = video_id
     return {
@@ -122,13 +127,16 @@ async def download_comments(body: dict):
             "", "---", "",
         ]
         for i, c in enumerate(comments, 1):
+            heart = " ❤️ Creator Hearted" if c.get("heart") else ""
+            creator = " 📺 **[Creator]**" if c.get("is_creator") else ""
             if c["is_reply"]:
-                md += [f"#### ↳ Reply #{i} by {c['author']}",
-                       f"*{c['time']} · Likes: {c['likes']}*",
+                md += [f"#### ↳ Reply #{i} by {c['author']}{creator}",
+                       f"*{c['time']} · Likes: {c['likes']}{heart}*",
                        f"> {c['text']}", ""]
             else:
+                replies_str = f" · 💬 {c['reply_count']} replies" if c.get("reply_count") else ""
                 md += [f"### Comment #{i}",
-                       f"**{c['author']}** · {c['time']} · 👍 {c['likes']}",
+                       f"**{c['author']}**{creator} · {c['time']} · 👍 {c['likes']}{heart}{replies_str}",
                        f"> {c['text']}", ""]
         md_content = "\n".join(md)
 
