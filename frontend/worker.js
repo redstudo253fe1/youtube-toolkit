@@ -1318,8 +1318,9 @@ const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
 let state = {
   videoId:'', videoUrl:'', videoTitle:'', videoThumb:'',
   currentTab:'comments', selectedLang:null,
-  results:{},               // {comments:{...}, captions:{...}, transcribe:{...}}
+  results:{},
   chatHistory:[], uploadedFiles:[], contextLoaded:false,
+  attachedFile:null,        // {filename, mimeType, content} - sent as base64 file with each AI request
   audioFile:null,
   whisperPipeline:null, whisperModelId:null,
 };
@@ -1819,36 +1820,19 @@ function openChat(){
     state.contextLoaded = true;
     const title = state.videoTitle || result.title || 'this content';
     const fullContent = result.content || '';
-    // Send up to 40,000 chars (~10k tokens — verified working with backend; ~300 typical comments)
-    // The chat backend (api-hoot) gets slow/unreliable past ~50k. 40k is the sweet spot.
-    const MAX_CTX = 40000;
-    const content = fullContent.length > MAX_CTX
-      ? fullContent.substring(0, MAX_CTX) + \`\\n\\n[TRUNCATED at \${MAX_CTX} chars — total content is \${fullContent.length} chars]\`
-      : fullContent;
-    // IMPORTANT: api-hoot.onrender.com strips system messages, so we put data in a USER message
-    // and provide a fake assistant ack so the AI treats it as established context.
-    state.chatHistory = [
-      {
-        role: 'user',
-        content: \`I'm sharing YouTube \${state.currentTab} data from "\${title}". Read it carefully — I'll ask specific questions next.
-
-When I ask about a specific user (e.g., "what did @username comment"), search the data for that literal "@username" string and quote their comment(s) verbatim with comment number. Do NOT give generic summaries unless I ask. Do NOT say "not found" until you've searched the full text below.
-
-DATA (\${fullContent.length === content.length ? 'COMPLETE' : 'partial — ' + content.length + '/' + fullContent.length + ' chars'}):
-
-\${content}
-
-End of data. Confirm you've read it.\`
-      },
-      {
-        role: 'assistant',
-        content: \`Got it — I've read the \${state.currentTab} data for "\${title}". I have the full text in front of me and can search for specific @usernames, comments, themes, translations, or anything you need. What would you like to know?\`
-      }
-    ];
+    // NEW APPROACH: don't dump data into chatHistory.
+    // Instead, attach as a base64-encoded markdown file via the API's "files" field
+    // (per api-hoot docs). This sends the COMPLETE file with every request — no truncation.
+    state.chatHistory = []; // clean history, file is sent as attachment per request
+    state.attachedFile = {
+      filename: \`\${state.currentTab}_\${(state.videoId||'data')}.md\`,
+      mimeType: 'text/markdown',
+      content: fullContent,
+    };
     const empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
-    const sizeMsg = fullContent.length > MAX_CTX ? \` _(\${(fullContent.length/1000).toFixed(0)}K chars, sent \${(MAX_CTX/1000).toFixed(0)}K to AI)_\` : '';
-    appendMsg('assistant', \`I've loaded the **\${state.currentTab}** for **"\${title}"**\${sizeMsg}.\\n\\nAsk me anything — summary, key themes, sentiment, specific users/comments, translations…\`);
+    const kb = (fullContent.length / 1024).toFixed(0);
+    appendMsg('assistant', \`I've loaded the **\${state.currentTab}** file for **"\${title}"** (\${kb} KB) as an attachment. The full file goes to the AI with every question — nothing truncated.\\n\\nAsk me anything: specific @usernames, summaries, themes, translations…\`);
     saveSession();
   }
   setTimeout(() => document.getElementById('chat-input').focus(), 350);
@@ -1891,10 +1875,21 @@ async function sendMessage(){
   msgs.scrollTop = msgs.scrollHeight;
 
   try {
+    // Build files array — attach the loaded result file (markdown) so AI sees full content every turn
+    const filesArr = [];
+    if (state.attachedFile && state.attachedFile.content) {
+      // UTF-8 safe base64 encode (handles emojis & unicode)
+      const utf8 = unescape(encodeURIComponent(state.attachedFile.content));
+      const b64 = btoa(utf8);
+      filesArr.push(\`data:\${state.attachedFile.mimeType};base64,\${b64}\`);
+    }
+    const reqBody = {model, thinking, messages: state.chatHistory, stream: true};
+    if (filesArr.length) reqBody.files = filesArr;
+
     const res = await fetch(AI_API, {
       method:'POST',
       headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
-      body: JSON.stringify({model, thinking, messages: state.chatHistory, stream:true}),
+      body: JSON.stringify(reqBody),
     });
     if (!res.ok) {
       bubble.textContent = \`❌ Server returned \${res.status}. Try a different model.\`;
