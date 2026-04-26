@@ -213,42 +213,49 @@ async def _async_innertube_batch(session, payloads):
     return [{} for _ in payloads]
 
 
+def _ep_token(ep):
+    """Extract continuation token from any endpoint shape."""
+    if not ep:
+        return None
+    cmd = ep.get("continuationCommand") or {}
+    t = cmd.get("token") or cmd.get("continuation")
+    if t:
+        return t
+    t = next(_search_dict(ep, "token"), None) or next(_search_dict(ep, "continuation"), None)
+    return t if isinstance(t, str) and len(t) > 10 else None
+
+
 async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None):
+    """Fetch all replies for a thread, with aggressive retry. Per-token max 5 retries."""
     conts = [cont_ep]
     seen_tokens = set()
-    consecutive_failures = 0
+    retry_count = {}  # token -> retry count
     while conts:
         ep = conts.pop(0)
-        token = (
-            (ep.get("continuationCommand") or {}).get("token")
-            or (ep.get("continuationCommand") or {}).get("continuation")
-            or next(_search_dict(ep, "token"), None)
-            or next(_search_dict(ep, "continuation"), None)
-        )
-        if not token or not isinstance(token, str) or len(token) < 10:
+        token = _ep_token(ep)
+        if not token or token in seen_tokens:
             continue
-        if token in seen_tokens:
-            continue
-        seen_tokens.add(token)
 
         resp = await _async_innertube(session, "next", {"context": _CTX, "continuation": token})
-        if not resp:
-            consecutive_failures += 1
-            if consecutive_failures >= 3:
-                break
-            continue
-        consecutive_failures = 0
 
+        # Detect failure or YouTube error and retry the SAME token (up to 5 times)
+        is_failed = (not resp) or (next(_search_dict(resp, "externalErrorMessage"), None) is not None)
+        if is_failed:
+            retry_count[token] = retry_count.get(token, 0) + 1
+            if retry_count[token] < 5:
+                # Requeue with backoff
+                await asyncio.sleep(0.5 * retry_count[token])
+                conts.append(ep)
+            # else: give up on this token
+            continue
+
+        seen_tokens.add(token)
         comments, _, more = _parse_comments(resp, owner_channel_id)
         results.extend(comments)
         stats["replies"] += len(comments)
         for ep2 in more:
-            t = (
-                (ep2.get("continuationCommand") or {}).get("token")
-                or (ep2.get("continuationCommand") or {}).get("continuation")
-                or next(_search_dict(ep2, "token"), None)
-            )
-            if t and isinstance(t, str) and len(t) > 10 and t not in seen_tokens:
+            t = _ep_token(ep2)
+            if t and t not in seen_tokens:
                 conts.append(ep2)
 
 
@@ -270,34 +277,41 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
     async with aiohttp.ClientSession() as session:
         reply_tasks = []
         continuations = [token]
+        seen_top_tokens = set()
+        retry_count = {}  # token -> retry attempts
 
-        BATCH = 10  # fetch 10 pages in parallel
-        failures = 0
+        BATCH = 8  # fetch 8 pages in parallel (gentler on YouTube rate-limit)
+        consecutive_empty_batches = 0
         while continuations:
             if max_comments > 0 and (stats["top"] + stats["replies"]) >= max_comments:
                 break
 
-            # Take up to BATCH tokens at once
+            # Take up to BATCH tokens at once (skip already-seen)
             batch = []
             while continuations and len(batch) < BATCH:
-                batch.append(continuations.pop(0))
+                t = continuations.pop(0)
+                if t and t not in seen_top_tokens:
+                    batch.append(t)
+            if not batch:
+                continue
 
-            # Fetch all pages in a single CF Worker batch call (CF fans out to YouTube in parallel)
             payloads = [{"context": _CTX, "continuation": t} for t in batch]
             results = await _async_innertube_batch(session, payloads)
 
-            got_any = False
+            batch_got_data = False
             for tok, resp in zip(batch, results):
-                if not resp:
-                    failures += 1
-                    if failures < 3:
-                        continuations.insert(0, tok)  # retry
+                # Detect failure (no resp, or YouTube error)
+                is_failed = (not resp) or (next(_search_dict(resp, "externalErrorMessage"), None) is not None)
+                if is_failed:
+                    retry_count[tok] = retry_count.get(tok, 0) + 1
+                    if retry_count[tok] < 5:
+                        continuations.append(tok)  # back of queue
+                    # else: give up after 5 attempts
                     continue
-                failures = 0
-                if next(_search_dict(resp, "externalErrorMessage"), None):
-                    continue
-                got_any = True
 
+                # Success
+                seen_top_tokens.add(tok)
+                batch_got_data = True
                 comments, next_c, reply_c = _parse_comments(resp, owner_channel_id)
                 for c in comments:
                     if not c["reply"]:
@@ -305,32 +319,37 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
                         stats["top"] += 1
 
                 for ep in next_c:
-                    t = (ep.get("continuationCommand", {}).get("token")
-                         or ep.get("continuationCommand", {}).get("continuation")
-                         or next(_search_dict(ep, "token"), None)
-                         or next(_search_dict(ep, "continuation"), None))
-                    if t and isinstance(t, str) and len(t) > 10:
+                    t = _ep_token(ep)
+                    if t and t not in seen_top_tokens:
                         continuations.append(t)
 
-                # Launch reply fetchers as background tasks
                 for ep in reply_c:
                     task = asyncio.ensure_future(
                         _fetch_replies(session, ep, all_replies, stats, owner_channel_id)
                     )
                     reply_tasks.append(task)
 
-            if failures >= 3 and not got_any:
-                break
+            # Track consecutive empty batches; only break if MANY consecutive failures
+            if not batch_got_data:
+                consecutive_empty_batches += 1
+                if consecutive_empty_batches >= 5:
+                    break
+                # Gentle backoff before next try
+                await asyncio.sleep(1.0 * consecutive_empty_batches)
+            else:
+                consecutive_empty_batches = 0
+                # Tiny pause between successful batches to be gentle
+                await asyncio.sleep(0.05)
 
             now = time.time()
             if on_progress and now - last_cb > 0.4:
                 on_progress({"total": stats["top"] + stats["replies"]})
                 last_cb = now
 
-        # Wait for all reply tasks
+        # Wait for all reply tasks (longer timeout for big videos)
         if reply_tasks:
             try:
-                await asyncio.wait_for(asyncio.gather(*reply_tasks), timeout=180)
+                await asyncio.wait_for(asyncio.gather(*reply_tasks), timeout=600)
             except asyncio.TimeoutError:
                 pass
 
