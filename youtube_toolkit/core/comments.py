@@ -215,6 +215,8 @@ async def _async_innertube_batch(session, payloads):
 
 async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None):
     conts = [cont_ep]
+    seen_tokens = set()
+    consecutive_failures = 0
     while conts:
         ep = conts.pop(0)
         token = (
@@ -224,10 +226,19 @@ async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None
             or next(_search_dict(ep, "continuation"), None)
         )
         if not token or not isinstance(token, str) or len(token) < 10:
-            break
+            continue
+        if token in seen_tokens:
+            continue
+        seen_tokens.add(token)
+
         resp = await _async_innertube(session, "next", {"context": _CTX, "continuation": token})
         if not resp:
-            break
+            consecutive_failures += 1
+            if consecutive_failures >= 3:
+                break
+            continue
+        consecutive_failures = 0
+
         comments, _, more = _parse_comments(resp, owner_channel_id)
         results.extend(comments)
         stats["replies"] += len(comments)
@@ -237,7 +248,7 @@ async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None
                 or (ep2.get("continuationCommand") or {}).get("continuation")
                 or next(_search_dict(ep2, "token"), None)
             )
-            if t and isinstance(t, str) and len(t) > 10:
+            if t and isinstance(t, str) and len(t) > 10 and t not in seen_tokens:
                 conts.append(ep2)
 
 
