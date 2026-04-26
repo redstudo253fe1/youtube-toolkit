@@ -1825,24 +1825,26 @@ function openChat(){
     const content = fullContent.length > MAX_CTX
       ? fullContent.substring(0, MAX_CTX) + \`\\n\\n[TRUNCATED at \${MAX_CTX} chars — total content is \${fullContent.length} chars]\`
       : fullContent;
-    state.chatHistory = [{
-      role:'system',
-      content: \`You have access to YouTube \${state.currentTab} from the video "\${title}".
+    // IMPORTANT: api-hoot.onrender.com strips system messages, so we put data in a USER message
+    // and provide a fake assistant ack so the AI treats it as established context.
+    state.chatHistory = [
+      {
+        role: 'user',
+        content: \`I'm sharing YouTube \${state.currentTab} data from "\${title}". Read it carefully — I'll ask specific questions next.
 
-CRITICAL RULES:
-1. ANSWER THE EXACT QUESTION ASKED. Do NOT give general summaries when asked something specific.
-2. When asked "what did @username comment" or "find user X", search the data character-by-character. The data is delimited by "@username" markers — locate the exact username string and quote their comment(s) verbatim.
-3. NEVER say "user not found" or "outside dataset" until you have searched the FULL data below for the literal string "@username".
-4. Do NOT generate generic sentiment analysis unless explicitly asked.
-5. Quote comments exactly as written, with their comment number.
-6. If the user asks for translation, translate; do not summarize.
+When I ask about a specific user (e.g., "what did @username comment"), search the data for that literal "@username" string and quote their comment(s) verbatim with comment number. Do NOT give generic summaries unless I ask. Do NOT say "not found" until you've searched the full text below.
 
 DATA (\${fullContent.length === content.length ? 'COMPLETE' : 'partial — ' + content.length + '/' + fullContent.length + ' chars'}):
 
 \${content}
 
-End of data. Always answer the user's specific question with direct quotes/facts from the data above.\`
-    }];
+End of data. Confirm you've read it.\`
+      },
+      {
+        role: 'assistant',
+        content: \`Got it — I've read the \${state.currentTab} data for "\${title}". I have the full text in front of me and can search for specific @usernames, comments, themes, translations, or anything you need. What would you like to know?\`
+      }
+    ];
     const empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
     const sizeMsg = fullContent.length > MAX_CTX ? \` _(\${(fullContent.length/1000).toFixed(0)}K chars, sent \${(MAX_CTX/1000).toFixed(0)}K to AI)_\` : '';
