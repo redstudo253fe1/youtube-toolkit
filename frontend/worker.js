@@ -267,6 +267,16 @@ nav{
   border-radius:4px;display:inline-block;
   border:1px solid var(--border-2);
 }
+.btn-new-video{
+  flex-shrink:0;display:inline-flex;align-items:center;gap:.35rem;
+  background:var(--surface-2);border:1px solid var(--border-2);
+  color:var(--muted);
+  border-radius:var(--r-3);padding:.5rem .85rem;
+  font-size:.78rem;font-weight:600;
+  cursor:pointer;font-family:inherit;
+  transition:all .2s var(--ease);
+}
+.btn-new-video:hover{border-color:var(--a1);color:var(--text);background:rgba(124,58,237,.08)}
 
 /* ── Tabs ────────────────────────────────────────────── */
 #actions{padding:.5rem 0 1.5rem;animation:slideUp .4s var(--ease) .05s both}
@@ -292,6 +302,13 @@ nav{
   color:#fff;
   background:var(--grad);
   box-shadow:0 4px 12px rgba(124,58,237,.35), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.tab.has-result:not(.active)::after{
+  content:'';
+  position:absolute;top:.4rem;right:.7rem;
+  width:7px;height:7px;border-radius:50%;
+  background:var(--success);
+  box-shadow:0 0 8px var(--success);
 }
 .tab-icon{font-size:1rem}
 
@@ -717,14 +734,14 @@ nav{
 .chat-backdrop.open{opacity:1;pointer-events:all}
 .chat-drawer{
   position:fixed;top:0;right:0;bottom:0;
-  width:min(520px,100vw);
-  background:var(--bg-2);
+  width:min(720px,100vw);
+  background:linear-gradient(180deg,#0a0a18 0%,#0e0e1f 100%);
   border-left:1px solid var(--border-2);
   z-index:100;
   display:flex;flex-direction:column;
   transform:translateX(100%);
-  transition:transform .35s var(--ease);
-  box-shadow:-12px 0 40px rgba(0,0,0,.5);
+  transition:transform .4s var(--ease);
+  box-shadow:-20px 0 60px rgba(0,0,0,.6);
 }
 .chat-drawer.open{transform:translateX(0)}
 .chat-header{
@@ -780,64 +797,118 @@ nav{
 
 .chat-messages{
   flex:1;overflow-y:auto;
-  padding:1rem 1.1rem;
-  display:flex;flex-direction:column;gap:.8rem;
+  padding:1.2rem 1.4rem 1rem;
+  display:flex;flex-direction:column;gap:1.4rem;
   min-height:0;
+  scroll-behavior:smooth;
 }
-.msg{display:flex;flex-direction:column;gap:.25rem;max-width:90%;animation:msgIn .25s var(--ease)}
-@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-.msg.user{align-self:flex-end;align-items:flex-end}
-.msg.assistant{align-self:flex-start;align-items:flex-start}
+.msg{
+  display:flex;gap:.8rem;align-items:flex-start;
+  max-width:100%;
+  animation:msgIn .3s var(--ease);
+}
+@keyframes msgIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg-avatar{
+  width:32px;height:32px;border-radius:50%;
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.85rem;font-weight:700;
+  background:var(--surface-3);
+  border:1px solid var(--border-2);
+}
+.msg.user .msg-avatar{
+  background:var(--grad);
+  color:#fff;
+  border-color:transparent;
+  box-shadow:0 2px 8px rgba(124,58,237,.4);
+}
+.msg.assistant .msg-avatar{
+  background:linear-gradient(135deg,#1e1e3f 0%,#2a2a4d 100%);
+  color:var(--a1);
+  border:1px solid rgba(124,58,237,.3);
+}
+.msg-content{
+  flex:1;min-width:0;
+  display:flex;flex-direction:column;gap:.3rem;
+}
+.msg-name{
+  font-size:.78rem;font-weight:700;
+  color:var(--text);
+  display:flex;align-items:center;gap:.5rem;
+}
+.msg-name-tag{
+  font-size:.65rem;font-weight:600;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted);
+  padding:.1rem .4rem;background:var(--surface-2);
+  border:1px solid var(--border-2);border-radius:4px;
+}
 .msg-bubble{
-  padding:.75rem 1rem;border-radius:var(--r-2);
-  font-size:.9rem;line-height:1.6;
-  word-break:break-word;
+  padding:.1rem 0;
+  font-size:.92rem;line-height:1.65;
+  word-break:break-word;color:var(--text);
 }
 .msg.user .msg-bubble{
-  background:var(--grad);color:#fff;
-  border-bottom-right-radius:4px;
-  box-shadow:0 2px 8px rgba(124,58,237,.3);
-}
-.msg.assistant .msg-bubble{
   background:var(--surface-2);
   border:1px solid var(--border-2);
-  color:var(--text);
-  border-bottom-left-radius:4px;
+  padding:.7rem .95rem;
+  border-radius:var(--r-2);
+  border-top-left-radius:4px;
 }
-.msg.assistant .msg-bubble h1,
-.msg.assistant .msg-bubble h2,
-.msg.assistant .msg-bubble h3{font-size:1em;font-weight:700;margin:.5rem 0 .25rem}
-.msg.assistant .msg-bubble p{margin:.35rem 0}
-.msg.assistant .msg-bubble ul,.msg.assistant .msg-bubble ol{padding-left:1.3rem;margin:.35rem 0}
-.msg.assistant .msg-bubble li{margin:.2rem 0}
-.msg.assistant .msg-bubble code{
-  background:rgba(255,255,255,.08);
-  padding:.1rem .35rem;border-radius:3px;
+.msg-bubble h1,.msg-bubble h2,.msg-bubble h3{
+  font-size:1.05em;font-weight:700;
+  margin:.7rem 0 .3rem;color:var(--text);
+}
+.msg-bubble h1:first-child,.msg-bubble h2:first-child,.msg-bubble h3:first-child{margin-top:0}
+.msg-bubble h1{font-size:1.2em}
+.msg-bubble p{margin:.4rem 0}
+.msg-bubble p:first-child{margin-top:0}
+.msg-bubble p:last-child{margin-bottom:0}
+.msg-bubble ul,.msg-bubble ol{padding-left:1.4rem;margin:.4rem 0}
+.msg-bubble li{margin:.25rem 0;line-height:1.6}
+.msg-bubble li::marker{color:var(--a1)}
+.msg-bubble code{
+  background:rgba(124,58,237,.12);
+  color:#e8d5ff;
+  padding:.12rem .4rem;border-radius:4px;
   font-family:'JetBrains Mono',monospace;font-size:.85em;
+  border:1px solid rgba(124,58,237,.2);
 }
-.msg.assistant .msg-bubble pre{
-  background:rgba(0,0,0,.3);
+.msg-bubble pre{
+  background:#080814;
   border:1px solid var(--border-2);
-  border-radius:6px;padding:.75rem;
-  overflow-x:auto;margin:.5rem 0;
+  border-radius:8px;padding:.85rem 1rem;
+  overflow-x:auto;margin:.6rem 0;
+  font-size:.85em;
 }
-.msg.assistant .msg-bubble pre code{background:none;padding:0}
-.msg.assistant .msg-bubble blockquote{
+.msg-bubble pre code{background:none;padding:0;border:none;color:#e2e8f0}
+.msg-bubble blockquote{
   border-left:3px solid var(--a1);
-  padding:.2rem .7rem;margin:.4rem 0;
-  background:rgba(124,58,237,.08);
+  padding:.3rem .8rem;margin:.5rem 0;
+  background:rgba(124,58,237,.06);
+  border-radius:0 var(--r-4) var(--r-4) 0;
+  color:var(--text-2);
 }
-.msg.assistant .msg-bubble strong{color:#fff}
-.msg-meta{font-size:.7rem;color:var(--muted-2);font-weight:500}
+.msg-bubble strong{color:var(--text);font-weight:700}
+.msg-bubble a{color:var(--a3);text-decoration:underline;text-underline-offset:2px}
+.msg-bubble hr{border:none;border-top:1px solid var(--border-2);margin:.7rem 0}
+.msg-bubble table{border-collapse:collapse;margin:.5rem 0;font-size:.88em;width:100%}
+.msg-bubble th,.msg-bubble td{border:1px solid var(--border-2);padding:.4rem .6rem;text-align:left}
+.msg-bubble th{background:var(--surface-2);font-weight:600}
+.msg-meta{font-size:.7rem;color:var(--muted-2);font-weight:500;margin-top:.15rem}
 
+.typing-dots{display:inline-flex;gap:5px;padding:.4rem 0}
 .typing-dots span{
-  display:inline-block;width:6px;height:6px;
-  background:var(--a1);border-radius:50%;
-  animation:bounce .9s var(--ease) infinite;
+  width:7px;height:7px;
+  background:linear-gradient(135deg,var(--a1),var(--a2));
+  border-radius:50%;
+  animation:typing-pulse 1.2s var(--ease) infinite;
 }
-.typing-dots span:nth-child(2){animation-delay:.15s}
-.typing-dots span:nth-child(3){animation-delay:.3s}
-@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.7}30%{transform:translateY(-5px);opacity:1}}
+.typing-dots span:nth-child(2){animation-delay:.18s}
+.typing-dots span:nth-child(3){animation-delay:.36s}
+@keyframes typing-pulse{
+  0%,60%,100%{transform:scale(.7);opacity:.4}
+  30%{transform:scale(1);opacity:1}
+}
 
 .chat-input-area{
   padding:.85rem;
@@ -1010,6 +1081,10 @@ nav{
       <h3 id="vid-title">Loading…</h3>
       <span id="vid-id" class="video-id"></span>
     </div>
+    <button class="btn-new-video" onclick="clearSession()" title="Try a different video">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9"/><polyline points="3 4 3 12 11 12"/></svg>
+      <span>New</span>
+    </button>
   </div>
 </section>
 
@@ -1241,17 +1316,84 @@ const BACKEND = 'https://redstdui-ytbro-api.hf.space';
 const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
 
 let state = {
-  videoId:'', videoUrl:'', currentTab:'comments', selectedLang:null,
-  result:null, chatHistory:[], uploadedFiles:[], contextLoaded:false,
+  videoId:'', videoUrl:'', videoTitle:'', videoThumb:'',
+  currentTab:'comments', selectedLang:null,
+  results:{},               // {comments:{...}, captions:{...}, transcribe:{...}}
+  chatHistory:[], uploadedFiles:[], contextLoaded:false,
   audioFile:null,
   whisperPipeline:null, whisperModelId:null,
 };
+
+// ── Persistence (localStorage) ───────────────────────
+const STORAGE_KEY = 'ytbro_session_v1';
+function saveSession(){
+  try {
+    const s = {
+      videoId: state.videoId, videoUrl: state.videoUrl,
+      videoTitle: state.videoTitle, videoThumb: state.videoThumb,
+      currentTab: state.currentTab,
+      selectedLang: state.selectedLang,
+      results: state.results,
+      chatHistory: state.chatHistory,
+      contextLoaded: state.contextLoaded,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+  } catch(e){}
+}
+function restoreSession(){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const s = JSON.parse(raw);
+    if (!s.videoId) return false;
+    state.videoId = s.videoId;
+    state.videoUrl = s.videoUrl;
+    state.videoTitle = s.videoTitle || s.videoId;
+    state.videoThumb = s.videoThumb || \`https://img.youtube.com/vi/\${s.videoId}/hqdefault.jpg\`;
+    state.currentTab = s.currentTab || 'comments';
+    state.selectedLang = s.selectedLang;
+    state.results = s.results || {};
+    state.chatHistory = s.chatHistory || [];
+    state.contextLoaded = s.contextLoaded || false;
+
+    document.getElementById('url-input').value = state.videoUrl;
+    document.getElementById('vid-thumb').src = state.videoThumb;
+    document.getElementById('vid-title').textContent = state.videoTitle;
+    document.getElementById('vid-id').textContent = state.videoId;
+    setHero(false);
+    show('video-info'); show('actions');
+    switchTab(state.currentTab);
+    if (state.results[state.currentTab]) showResult(state.currentTab, false);
+
+    // Restore chat history (skip system messages, show user/assistant pairs)
+    if (state.chatHistory && state.chatHistory.length > 1) {
+      const empty = document.getElementById('chat-empty');
+      if (empty) empty.remove();
+      for (const m of state.chatHistory) {
+        if (m.role === 'system') continue;
+        const text = typeof m.content === 'string' ? m.content
+          : (Array.isArray(m.content) ? m.content.find(p=>p.type==='text')?.text || '' : '');
+        if (text) appendMsg(m.role, text);
+      }
+    }
+    return true;
+  } catch(e) { console.warn('restoreSession failed', e); return false; }
+}
+function clearSession(){
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e){}
+  state.videoId=''; state.videoUrl=''; state.videoTitle=''; state.videoThumb='';
+  state.results={}; state.chatHistory=[]; state.contextLoaded=false; state.selectedLang=null;
+  hide('video-info'); hide('actions'); hide('result'); hide('processing');
+  document.getElementById('url-input').value='';
+  setHero(true);
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   const saved = localStorage.getItem('groq_key');
   if (saved) document.getElementById('groq-key').value = saved;
   document.getElementById('url-input').addEventListener('keydown', e => { if (e.key === 'Enter') analyzeUrl(); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChat(); });
+  restoreSession();
 });
 
 // ── Toast ─────────────────────────────────────────────
@@ -1286,50 +1428,73 @@ async function analyzeUrl(){
   const url = document.getElementById('url-input').value.trim();
   if (!url) { toast('Paste a YouTube URL first', 'error'); return; }
 
-  // Client-side validation BEFORE hitting backend
   const vid = extractVideoId(url);
-  if (!vid) {
-    toast('Not a valid YouTube video URL', 'error');
-    return;
-  }
+  if (!vid) { toast('Not a valid YouTube video URL', 'error'); return; }
+
+  // If same video, don't reset
+  if (state.videoId === vid) { switchTab(state.currentTab); return; }
+
+  // New video → reset session
+  state.videoId = vid;
+  state.videoUrl = \`https://www.youtube.com/watch?v=\${vid}\`;
+  state.videoThumb = \`https://img.youtube.com/vi/\${vid}/hqdefault.jpg\`;
+  state.videoTitle = 'Loading…';
+  state.results = {};
+  state.chatHistory = [];
+  state.contextLoaded = false;
+  state.selectedLang = null;
 
   setHero(false);
   show('video-info');
-  document.getElementById('vid-title').textContent = 'Loading…';
-  document.getElementById('vid-thumb').src = \`https://img.youtube.com/vi/\${vid}/hqdefault.jpg\`;
+  document.getElementById('vid-thumb').src = state.videoThumb;
+  document.getElementById('vid-title').textContent = state.videoTitle;
+  document.getElementById('vid-id').textContent = state.videoId;
+  show('actions');
+  switchTab('comments');
+  hide('result'); hide('processing');
 
-  try {
-    const res = await fetch(\`\${BACKEND}/api/video/info\`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({url}),
-    });
-    const data = await res.json();
-    if (data.error || !data.video_id) {
-      toast('Invalid YouTube URL', 'error');
-      hide('video-info');
-      return;
+  // Fetch real title via noembed.com (CORS-enabled, uses browser residential IP)
+  fetchVideoTitle(vid).then(title => {
+    if (title) {
+      state.videoTitle = title;
+      document.getElementById('vid-title').textContent = title;
+      saveSession();
     }
+  });
+  saveSession();
+}
 
-    state.videoId = data.video_id;
-    state.videoUrl = data.url;
-    document.getElementById('vid-thumb').src = data.thumbnail;
-    document.getElementById('vid-title').textContent = data.title;
-    document.getElementById('vid-id').textContent = data.video_id;
-    show('actions');
-    switchTab('comments');
-    hide('result'); hide('processing');
-  } catch (e) {
-    toast('Backend unreachable', 'error');
-    hide('video-info');
-  }
+async function fetchVideoTitle(vid){
+  // Try noembed.com first (CORS-enabled YouTube oembed proxy)
+  try {
+    const r = await fetch(\`https://noembed.com/embed?url=https://www.youtube.com/watch?v=\${vid}\`);
+    const d = await r.json();
+    if (d.title) return d.title;
+  } catch(e){}
+  // Fallback: backend
+  try {
+    const r = await fetch(\`\${BACKEND}/api/video/info\`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url:\`https://www.youtube.com/watch?v=\${vid}\`}),
+    });
+    const d = await r.json();
+    if (d.title && d.title !== vid) return d.title;
+  } catch(e){}
+  return null;
 }
 
 function switchTab(tab){
   state.currentTab = tab;
   ['comments','captions','transcribe'].forEach(t => {
-    document.getElementById(\`tab-\${t}\`).classList.toggle('active', t === tab);
+    const tabEl = document.getElementById(\`tab-\${t}\`);
+    tabEl.classList.toggle('active', t === tab);
+    tabEl.classList.toggle('has-result', !!state.results[t]);
     document.getElementById(\`opt-\${t}\`).classList.toggle('hidden', t !== tab);
   });
+  hide('processing');
+  if (state.results[tab]) showResult(tab, false);
+  else hide('result');
+  saveSession();
 }
 
 // ── Captions language check ───────────────────────────
@@ -1400,20 +1565,25 @@ async function startTranscribe(){
   const model = document.getElementById('trans-model').value;
   if (!state.audioFile) { toast('Choose an audio file first', 'error'); return; }
 
-  hide('actions'); show('processing'); hide('result');
-  state.result = null; state.chatHistory = []; state.contextLoaded = false;
+  show('processing'); hide('result');
+  state._currentDownload = null;
+  // Don't clear chat — let user keep chatting about previous results
   const log = document.getElementById('log-box'); log.innerHTML = '';
   document.getElementById('proc-title').textContent = '🎙️ Generating transcript…';
+  document.querySelector('.spinner').style.display = '';
 
   try {
     if (engine === 'browser') await transcribeWithBrowserWhisper(model, log);
     else await transcribeWithGroq(model, log);
+    if (state._currentDownload) {
+      state.results['transcribe'] = state._currentDownload;
+      saveSession();
+    }
     showResult('transcribe');
   } catch (err) {
     addLog(log, '❌ ' + (err.message||err), 'err');
     document.getElementById('proc-title').textContent = '❌ Transcription failed';
     document.querySelector('.spinner').style.display = 'none';
-    show('actions');
   }
 }
 
@@ -1486,7 +1656,7 @@ async function transcribeWithBrowserWhisper(modelId, log){
     }
   } else md += text;
 
-  state.result = {
+  state._currentDownload = {
     type:'result', content: md, title,
     filename: \`transcript_\${title.replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)}.md\`,
     stats: { words: wordCount, language: lang, duration: \`\${Math.floor(durSec/60)}m\${Math.floor(durSec%60)}s\` },
@@ -1536,7 +1706,7 @@ async function readSSE(res, log){
       try {
         const evt = JSON.parse(line.slice(6));
         if (evt.type === 'progress') addLog(log, evt.message);
-        else if (evt.type === 'result') { state.result = evt; addLog(log, '✅ Done!', 'ok'); }
+        else if (evt.type === 'result') { state._currentDownload = evt; addLog(log, '✅ Done!', 'ok'); }
         else if (evt.type === 'error') { addLog(log, '❌ ' + evt.message, 'err'); throw new Error(evt.message); }
         else if (evt.type === 'done') return;
       } catch(e) { if (e.message) throw e; }
@@ -1544,16 +1714,14 @@ async function readSSE(res, log){
   }
 }
 
-// ── Comments / Captions / YouTube transcribe ──────────
+// ── Comments / Captions ──────────────────────────────
 async function startDownload(type){
-  hide('actions'); show('processing'); hide('result');
-  state.result = null; state.chatHistory = []; state.contextLoaded = false;
+  show('processing'); hide('result');
+  state._currentDownload = null;
   const log = document.getElementById('log-box'); log.innerHTML = '';
+  document.querySelector('.spinner').style.display = '';
 
-  const titles = {
-    comments: '💬 Downloading comments…',
-    captions: '📝 Downloading captions…',
-  };
+  const titles = {comments:'💬 Downloading comments…', captions:'📝 Downloading captions…'};
   document.getElementById('proc-title').textContent = titles[type];
 
   let endpoint, body;
@@ -1561,7 +1729,7 @@ async function startDownload(type){
     endpoint = '/api/comments';
     body = {url: state.videoUrl, sort: document.getElementById('sort-mode').value, max_comments: parseInt(document.getElementById('max-comments').value)||0};
   } else if (type === 'captions') {
-    if (!state.selectedLang) { toast('Select a language first', 'error'); show('actions'); hide('processing'); return; }
+    if (!state.selectedLang) { toast('Select a language first', 'error'); hide('processing'); return; }
     endpoint = '/api/captions/download';
     body = {url: state.videoUrl, lang_code: state.selectedLang.code, lang_name: state.selectedLang.name};
   }
@@ -1569,12 +1737,15 @@ async function startDownload(type){
   try {
     const res = await fetch(\`\${BACKEND}\${endpoint}\`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     await readSSE(res, log);
+    if (state._currentDownload) {
+      state.results[type] = state._currentDownload;
+      saveSession();
+    }
     showResult(type);
   } catch (err) {
     addLog(log, '❌ ' + err.message, 'err');
     document.getElementById('proc-title').textContent = '❌ Download failed';
     document.querySelector('.spinner').style.display = 'none';
-    show('actions');
   }
 }
 
@@ -1587,11 +1758,14 @@ function addLog(box, msg, cls=''){
 }
 
 // ── Result view ──────────────────────────────────────
-function showResult(type){
-  if (!state.result) {
-    document.getElementById('proc-title').textContent = '❌ Failed — see log above';
-    document.querySelector('.spinner').style.display = 'none';
-    show('actions');
+function showResult(type, fromAction=true){
+  const result = state.results[type];
+  if (!result) {
+    if (fromAction) {
+      document.getElementById('proc-title').textContent = '❌ Failed — see log above';
+      document.querySelector('.spinner').style.display = 'none';
+    }
+    hide('result');
     return;
   }
   hide('processing'); show('result');
@@ -1601,7 +1775,7 @@ function showResult(type){
   document.getElementById('result-icon').textContent = icons[type];
   document.getElementById('result-label').textContent = labels[type];
 
-  const s = state.result.stats || {};
+  const s = result.stats || {};
   let html = '';
   if (s.total)    html += \`<span class="stat"><span class="stat-val">\${s.total.toLocaleString()}</span><span class="stat-lbl">comments</span></span>\`;
   if (s.words)    html += \`<span class="stat"><span class="stat-val">\${s.words.toLocaleString()}</span><span class="stat-lbl">words</span></span>\`;
@@ -1609,23 +1783,25 @@ function showResult(type){
   if (s.language) html += \`<span class="stat"><span class="stat-val">\${s.language}</span><span class="stat-lbl">lang</span></span>\`;
   document.getElementById('result-stats').innerHTML = html;
 
-  const content = state.result.content || '';
+  const content = result.content || '';
   const preview = document.getElementById('content-preview');
   preview.innerHTML = marked.parse(content.substring(0, 8000) + (content.length > 8000 ? '\\n\\n_…truncated_' : ''));
 
-  if (state.result.ai_url) {
-    document.getElementById('ai-link-url').textContent = state.result.ai_url;
+  if (result.ai_url) {
+    document.getElementById('ai-link-url').textContent = result.ai_url;
     show('ai-link-box');
   } else hide('ai-link-box');
 
   const blob = new Blob([content], {type:'text/markdown'});
   const dl = document.getElementById('btn-download');
   dl.href = URL.createObjectURL(blob);
-  dl.download = state.result.filename || 'content.md';
+  dl.download = result.filename || 'content.md';
 }
 
+function getCurrentResult(){ return state.results[state.currentTab]; }
 function copyContent(){
-  navigator.clipboard.writeText(state.result?.content || '');
+  const r = getCurrentResult();
+  navigator.clipboard.writeText(r?.content || '');
   toast('✅ Copied to clipboard', 'success');
 }
 function copyAiLink(){
@@ -1637,23 +1813,27 @@ function copyAiLink(){
 function openChat(){
   document.getElementById('chat-backdrop').classList.add('open');
   document.getElementById('chat-drawer').classList.add('open');
-  if (state.result && !state.contextLoaded) {
+  document.body.style.overflow = 'hidden';
+  const result = getCurrentResult();
+  if (result && !state.contextLoaded) {
     state.contextLoaded = true;
-    const title = state.result.title || 'this content';
-    const content = (state.result.content || '').substring(0, 15000);
+    const title = state.videoTitle || result.title || 'this content';
+    const content = (result.content || '').substring(0, 15000);
     state.chatHistory = [{
       role:'system',
-      content: \`You are an AI assistant analyzing YouTube content.\\nTitle: "\${title}"\\nDownloaded content:\\n\\n\${content}\\n\\nHelp the user understand, summarize, and analyze this content. Be direct and insightful.\`
+      content: \`You are analyzing YouTube content from the video titled "\${title}".\\nContent type: \${state.currentTab}.\\nFull content:\\n\\n\${content}\\n\\nBe direct, insightful, and use markdown formatting. Format lists, code, and headings properly.\`
     }];
     const empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
-    appendMsg('assistant', \`I've loaded **"\${title}"**.\\n\\nAsk me anything — I can summarize, find key themes, analyze sentiment, or answer specific questions.\`);
+    appendMsg('assistant', \`I've loaded the **\${state.currentTab}** for **"\${title}"**.\\n\\nAsk me anything — summary, key themes, sentiment, specific questions, translations…\`);
+    saveSession();
   }
   setTimeout(() => document.getElementById('chat-input').focus(), 350);
 }
 function closeChat(){
   document.getElementById('chat-backdrop').classList.remove('open');
   document.getElementById('chat-drawer').classList.remove('open');
+  document.body.style.overflow = '';
 }
 function sendTip(el){ openChat(); document.getElementById('chat-input').value = el.textContent; sendMessage(); }
 
@@ -1682,13 +1862,9 @@ async function sendMessage(){
   const thinking = document.getElementById('thinking-toggle').checked;
 
   const msgs = document.getElementById('chat-messages');
-  const wrap = document.createElement('div');
-  wrap.className = 'msg assistant';
-  const bubble = document.createElement('div');
-  bubble.className = 'msg-bubble';
+  const {wrap, bubble} = buildMsg('assistant', model);
   bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
-  const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.textContent = model;
-  wrap.appendChild(bubble); wrap.appendChild(meta); msgs.appendChild(wrap);
+  msgs.appendChild(wrap);
   msgs.scrollTop = msgs.scrollHeight;
 
   try {
@@ -1735,6 +1911,7 @@ async function sendMessage(){
     }
     if (!acc.trim()) bubble.textContent = '(No response — try again or switch model)';
     state.chatHistory.push({role:'assistant', content: acc});
+    saveSession();
   } catch (err) {
     bubble.textContent = \`❌ Error: \${err.message}\`;
   }
@@ -1742,12 +1919,34 @@ async function sendMessage(){
   document.getElementById('chat-input').focus();
 }
 
+const MODEL_NAMES = {
+  'claude':'Claude Sonnet','claude-opus':'Claude Opus','gpt-5.4':'GPT-5.4',
+  'gemini':'Gemini','sonar-pro':'Sonar Pro','sonar':'Sonar',
+  'r1':'DeepSeek R1','reasoning':'Reasoning','deep-research':'Deep Research',
+};
+function buildMsg(role, modelKey){
+  const wrap = document.createElement('div');
+  wrap.className = \`msg \${role}\`;
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'user' ? '🧑' : '🤖';
+  const content = document.createElement('div'); content.className = 'msg-content';
+  const name = document.createElement('div'); name.className = 'msg-name';
+  if (role === 'user') name.textContent = 'You';
+  else {
+    name.innerHTML = \`<span>\${MODEL_NAMES[modelKey]||modelKey}</span><span class="msg-name-tag">AI</span>\`;
+  }
+  const bubble = document.createElement('div'); bubble.className = 'msg-bubble';
+  content.appendChild(name); content.appendChild(bubble);
+  wrap.appendChild(avatar); wrap.appendChild(content);
+  return {wrap, bubble};
+}
 function appendMsg(role, text, fileNames=[]){
   const msgs = document.getElementById('chat-messages');
   const empty = document.getElementById('chat-empty');
   if (empty) empty.remove();
-  const wrap = document.createElement('div'); wrap.className = \`msg \${role}\`;
-  const bubble = document.createElement('div'); bubble.className = 'msg-bubble';
+  const modelKey = document.getElementById('chat-model').value;
+  const {wrap, bubble} = buildMsg(role, modelKey);
   if (role === 'assistant') bubble.innerHTML = marked.parse(text);
   else {
     bubble.textContent = text;
@@ -1760,9 +1959,6 @@ function appendMsg(role, text, fileNames=[]){
       });
     }
   }
-  const meta = document.createElement('div'); meta.className = 'msg-meta';
-  meta.textContent = role === 'user' ? 'You' : document.getElementById('chat-model').value;
-  wrap.appendChild(bubble); wrap.appendChild(meta);
   msgs.appendChild(wrap);
   msgs.scrollTop = msgs.scrollHeight;
 }
