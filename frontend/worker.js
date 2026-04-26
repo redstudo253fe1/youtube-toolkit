@@ -1818,14 +1818,21 @@ function openChat(){
   if (result && !state.contextLoaded) {
     state.contextLoaded = true;
     const title = state.videoTitle || result.title || 'this content';
-    const content = (result.content || '').substring(0, 15000);
+    const fullContent = result.content || '';
+    // Send up to 200,000 chars (~50k tokens — fits in Claude Sonnet 200k, GPT-5 128k, Gemini 1M)
+    // For 837 comments at ~100 chars each = ~84k chars, full set fits
+    const MAX_CTX = 200000;
+    const content = fullContent.length > MAX_CTX
+      ? fullContent.substring(0, MAX_CTX) + \`\\n\\n[TRUNCATED at \${MAX_CTX} chars — total content is \${fullContent.length} chars]\`
+      : fullContent;
     state.chatHistory = [{
       role:'system',
-      content: \`You are analyzing YouTube content from the video titled "\${title}".\\nContent type: \${state.currentTab}.\\nFull content:\\n\\n\${content}\\n\\nBe direct, insightful, and use markdown formatting. Format lists, code, and headings properly.\`
+      content: \`You are analyzing YouTube content from the video titled "\${title}".\\nContent type: \${state.currentTab}.\\nFull content (\${fullContent.length === content.length ? 'COMPLETE' : 'partial'}):\\n\\n\${content}\\n\\nBe direct, insightful, and use markdown formatting. When the user asks about a specific user/comment, search the entire content carefully before saying it doesn't exist.\`
     }];
     const empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
-    appendMsg('assistant', \`I've loaded the **\${state.currentTab}** for **"\${title}"**.\\n\\nAsk me anything — summary, key themes, sentiment, specific questions, translations…\`);
+    const sizeMsg = fullContent.length > MAX_CTX ? \` _(\${(fullContent.length/1000).toFixed(0)}K chars, sent \${(MAX_CTX/1000).toFixed(0)}K to AI)_\` : '';
+    appendMsg('assistant', \`I've loaded the **\${state.currentTab}** for **"\${title}"**\${sizeMsg}.\\n\\nAsk me anything — summary, key themes, sentiment, specific users/comments, translations…\`);
     saveSession();
   }
   setTimeout(() => document.getElementById('chat-input').focus(), 350);
