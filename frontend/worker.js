@@ -373,7 +373,45 @@ nav{
 }
 #audio-file::file-selector-button:hover{transform:translateY(-1px)}
 
-/* ── YouTube helper ──────────────────────────────────── */
+/* ── Info banner ─────────────────────────────────────── */
+.info-banner{
+  display:flex;gap:.7rem;align-items:flex-start;
+  background:linear-gradient(135deg,rgba(124,58,237,.08),rgba(236,72,153,.05));
+  border:1px solid rgba(124,58,237,.25);
+  border-radius:var(--r-3);
+  padding:.85rem 1rem;margin-bottom:1rem;
+  font-size:.85rem;line-height:1.55;color:var(--text-2);
+}
+.info-banner .info-icon{font-size:1.1rem;flex-shrink:0;line-height:1.4}
+.info-banner strong{color:var(--text);font-weight:700}
+
+/* ── YouTube tool cards (grid) ───────────────────────── */
+.yt-tools-row{
+  display:grid;grid-template-columns:repeat(4,1fr);
+  gap:.55rem;margin-bottom:1rem;
+}
+@media (max-width:600px){.yt-tools-row{grid-template-columns:repeat(2,1fr)}}
+.yt-tool-card{
+  display:flex;flex-direction:column;align-items:center;
+  gap:.2rem;padding:.85rem .5rem;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);
+  text-decoration:none;
+  transition:all .25s var(--ease);
+  text-align:center;
+}
+.yt-tool-card:hover{
+  border-color:var(--a1);
+  transform:translateY(-2px);
+  background:rgba(124,58,237,.06);
+  box-shadow:0 6px 20px rgba(124,58,237,.15);
+}
+.yt-tool-icon{font-size:1.3rem;margin-bottom:.15rem}
+.yt-tool-name{font-size:.85rem;font-weight:700;color:var(--text)}
+.yt-tool-desc{font-size:.7rem;color:var(--muted)}
+
+/* ── YouTube helper (legacy) ─────────────────────────── */
 .yt-helper{
   margin:.6rem 0 1rem;
   background:var(--surface-2);
@@ -1027,30 +1065,40 @@ nav{
 
   <!-- Transcribe -->
   <div id="opt-transcribe" class="options-panel hidden">
-    <div class="opt-group" style="margin-bottom:.85rem">
-      <label>Audio Source</label>
-      <div class="src-toggle">
-        <button class="src-btn active" id="src-url" onclick="setSrc('url')">📺 From YouTube URL</button>
-        <button class="src-btn" id="src-file" onclick="setSrc('file')">📁 Upload Audio File</button>
+    <div class="info-banner">
+      <div class="info-icon">💡</div>
+      <div>
+        <strong>Step 1:</strong> Get the audio file from YouTube using any tool below (free). <strong>Step 2:</strong> Upload it here. <strong>Step 3:</strong> Generate transcript in any language — completely free.
       </div>
     </div>
 
-    <div id="src-file-section" class="hidden">
-      <div class="opt-group" style="margin-bottom:.6rem">
-        <label>Audio File</label>
-        <input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4" onchange="onAudioFile(this)"/>
-        <div id="audio-file-info" style="font-size:.78rem;color:var(--muted);margin-top:.5rem"></div>
-      </div>
-      <details class="yt-helper">
-        <summary>Need to extract audio from a YouTube URL?</summary>
-        <div class="yt-helper-body">
-          <p>Use any of these free tools to download the audio MP3, then upload below:</p>
-          <a href="https://cobalt.tools" target="_blank" rel="noopener" class="yt-tool">🟣 Cobalt.tools <span>clean · no ads</span></a>
-          <a href="https://yt5s.io" target="_blank" rel="noopener" class="yt-tool">🟢 YT5S.io <span>fast MP3 converter</span></a>
-          <a href="https://ytmp3.gg" target="_blank" rel="noopener" class="yt-tool">🔵 YTMP3.gg <span>simple &amp; reliable</span></a>
-          <a href="https://9convert.com" target="_blank" rel="noopener" class="yt-tool">🟠 9Convert.com <span>alternative</span></a>
-        </div>
-      </details>
+    <div class="yt-tools-row">
+      <a href="https://cobalt.tools" target="_blank" rel="noopener" class="yt-tool-card">
+        <div class="yt-tool-icon">🟣</div>
+        <div class="yt-tool-name">Cobalt.tools</div>
+        <div class="yt-tool-desc">clean · no ads</div>
+      </a>
+      <a href="https://yt5s.io" target="_blank" rel="noopener" class="yt-tool-card">
+        <div class="yt-tool-icon">🟢</div>
+        <div class="yt-tool-name">YT5S.io</div>
+        <div class="yt-tool-desc">fast MP3</div>
+      </a>
+      <a href="https://ytmp3.gg" target="_blank" rel="noopener" class="yt-tool-card">
+        <div class="yt-tool-icon">🔵</div>
+        <div class="yt-tool-name">YTMP3.gg</div>
+        <div class="yt-tool-desc">simple</div>
+      </a>
+      <a href="https://9convert.com" target="_blank" rel="noopener" class="yt-tool-card">
+        <div class="yt-tool-icon">🟠</div>
+        <div class="yt-tool-name">9Convert</div>
+        <div class="yt-tool-desc">alternative</div>
+      </a>
+    </div>
+
+    <div class="opt-group" style="margin-bottom:.85rem">
+      <label>Audio File</label>
+      <input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4" onchange="onAudioFile(this)"/>
+      <div id="audio-file-info" style="font-size:.78rem;color:var(--muted);margin-top:.5rem"></div>
     </div>
 
     <div class="opt-row">
@@ -1195,7 +1243,7 @@ const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
 let state = {
   videoId:'', videoUrl:'', currentTab:'comments', selectedLang:null,
   result:null, chatHistory:[], uploadedFiles:[], contextLoaded:false,
-  transSrc:'url', audioFile:null,
+  audioFile:null,
   whisperPipeline:null, whisperModelId:null,
 };
 
@@ -1215,13 +1263,40 @@ function toast(msg, type=''){
 }
 
 // ── URL analyze ───────────────────────────────────────
+function extractVideoId(input){
+  const s = input.trim();
+  // Direct 11-char ID
+  if (/^[\\w-]{11}$/.test(s)) return s;
+  // URL patterns
+  const patterns = [
+    /youtube\\.com\\/watch\\?v=([\\w-]{11})/,
+    /youtu\\.be\\/([\\w-]{11})/,
+    /youtube\\.com\\/embed\\/([\\w-]{11})/,
+    /youtube\\.com\\/shorts\\/([\\w-]{11})/,
+    /youtube\\.com\\/live\\/([\\w-]{11})/,
+  ];
+  for (const p of patterns) {
+    const m = s.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
 async function analyzeUrl(){
   const url = document.getElementById('url-input').value.trim();
   if (!url) { toast('Paste a YouTube URL first', 'error'); return; }
 
+  // Client-side validation BEFORE hitting backend
+  const vid = extractVideoId(url);
+  if (!vid) {
+    toast('Not a valid YouTube video URL', 'error');
+    return;
+  }
+
   setHero(false);
   show('video-info');
   document.getElementById('vid-title').textContent = 'Loading…';
+  document.getElementById('vid-thumb').src = \`https://img.youtube.com/vi/\${vid}/hqdefault.jpg\`;
 
   try {
     const res = await fetch(\`\${BACKEND}/api/video/info\`, {
@@ -1229,7 +1304,11 @@ async function analyzeUrl(){
       body: JSON.stringify({url}),
     });
     const data = await res.json();
-    if (data.error) { toast('Invalid YouTube URL', 'error'); return; }
+    if (data.error || !data.video_id) {
+      toast('Invalid YouTube URL', 'error');
+      hide('video-info');
+      return;
+    }
 
     state.videoId = data.video_id;
     state.videoUrl = data.url;
@@ -1241,6 +1320,7 @@ async function analyzeUrl(){
     hide('result'); hide('processing');
   } catch (e) {
     toast('Backend unreachable', 'error');
+    hide('video-info');
   }
 }
 
@@ -1287,12 +1367,6 @@ async function checkLanguages(){
 }
 
 // ── Transcribe controls ──────────────────────────────
-function setSrc(src){
-  state.transSrc = src;
-  document.getElementById('src-url').classList.toggle('active', src === 'url');
-  document.getElementById('src-file').classList.toggle('active', src === 'file');
-  document.getElementById('src-file-section').classList.toggle('hidden', src !== 'file');
-}
 function onAudioFile(input){
   const f = input.files[0];
   if (!f) { state.audioFile = null; document.getElementById('audio-file-info').textContent = ''; return; }
@@ -1324,9 +1398,7 @@ function onEngineChange(){
 async function startTranscribe(){
   const engine = document.getElementById('trans-engine').value;
   const model = document.getElementById('trans-model').value;
-  const src = state.transSrc;
-  if (src === 'file' && !state.audioFile) { toast('Choose an audio file first', 'error'); return; }
-  if (src === 'url' && !state.videoUrl) { toast('Paste & analyze a YouTube URL first', 'error'); return; }
+  if (!state.audioFile) { toast('Choose an audio file first', 'error'); return; }
 
   hide('actions'); show('processing'); hide('result');
   state.result = null; state.chatHistory = []; state.contextLoaded = false;
@@ -1334,8 +1406,8 @@ async function startTranscribe(){
   document.getElementById('proc-title').textContent = '🎙️ Generating transcript…';
 
   try {
-    if (engine === 'browser') await transcribeWithBrowserWhisper(model, src, log);
-    else await transcribeWithGroq(model, src, log);
+    if (engine === 'browser') await transcribeWithBrowserWhisper(model, log);
+    else await transcribeWithGroq(model, log);
     showResult('transcribe');
   } catch (err) {
     addLog(log, '❌ ' + (err.message||err), 'err');
@@ -1346,19 +1418,14 @@ async function startTranscribe(){
 }
 
 // ── Browser Whisper ──────────────────────────────────
-async function transcribeWithBrowserWhisper(modelId, src, log){
+async function transcribeWithBrowserWhisper(modelId, log){
   addLog(log, 'Loading Transformers.js…');
   const tf = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
   tf.env.allowLocalModels = false;
   tf.env.useBrowserCache = true;
 
-  let blob;
-  if (src === 'file') {
-    blob = state.audioFile;
-    addLog(log, \`Using uploaded file: \${state.audioFile.name}\`);
-  } else {
-    throw new Error('Browser Whisper needs an audio file. Switch to "Upload Audio File" mode.');
-  }
+  const blob = state.audioFile;
+  addLog(log, \`Using uploaded file: \${state.audioFile.name}\`);
 
   addLog(log, 'Decoding audio…');
   const arrayBuf = await blob.arrayBuffer();
@@ -1409,7 +1476,7 @@ async function transcribeWithBrowserWhisper(modelId, src, log){
   const text = result.text || '';
   const lang = result.language || 'auto';
   const wordCount = text.split(/\\s+/).filter(Boolean).length;
-  const title = (src === 'file') ? state.audioFile.name.replace(/\\.[^.]+$/, '') : (document.getElementById('vid-title').textContent || 'Audio');
+  const title = state.audioFile.name.replace(/\\.[^.]+$/, '');
 
   let md = \`# Transcript: \${title}\\n\\n- **Engine:** Browser Whisper (\${modelId})\\n- **Language:** \${lang}\\n- **Words:** \${wordCount.toLocaleString()}\\n- **Duration:** \${Math.floor(durSec/60)}m\${Math.floor(durSec%60)}s\\n\\n---\\n\\n\`;
   if (result.chunks && result.chunks.length) {
@@ -1433,31 +1500,25 @@ function formatTs(s){
   return \`\${String(m).padStart(2,'0')}:\${ss}\`;
 }
 
-// ── Groq cloud (file or URL) ─────────────────────────
-async function transcribeWithGroq(model, src, log){
+// ── Groq cloud (file upload) ─────────────────────────
+async function transcribeWithGroq(model, log){
   const apiKey = document.getElementById('groq-key').value.trim();
   if (!apiKey) throw new Error('Enter a Groq API key first.');
 
-  if (src === 'file') {
-    addLog(log, \`Uploading \${state.audioFile.name} to Groq…\`);
-    const form = new FormData();
-    form.append('file', state.audioFile);
-    form.append('api_key', apiKey);
-    form.append('model', model);
-    const res = await fetch(\`\${BACKEND}/api/transcribe/file\`, { method:'POST', body: form });
-    if (!res.ok) {
-      const err = await res.text();
-      throw new Error(\`Groq upload failed: \${err.substring(0,200)}\`);
-    }
-    await readSSE(res, log);
-  } else {
-    addLog(log, 'Sending YouTube URL to Groq backend…');
-    const res = await fetch(\`\${BACKEND}/api/transcribe\`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({url: state.videoUrl, api_key: apiKey, model}),
-    });
-    await readSSE(res, log);
+  const sizeMB = state.audioFile.size / 1048576;
+  if (sizeMB > 25) throw new Error(\`File too large (\${sizeMB.toFixed(1)}MB). Groq max is 25MB. Switch to Browser Whisper for unlimited size.\`);
+
+  addLog(log, \`Uploading \${state.audioFile.name} (\${sizeMB.toFixed(1)}MB) to Groq…\`);
+  const form = new FormData();
+  form.append('file', state.audioFile);
+  form.append('api_key', apiKey);
+  form.append('model', model);
+  const res = await fetch(\`\${BACKEND}/api/transcribe/file\`, { method:'POST', body: form });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(\`Upload failed: \${err.substring(0,200)}\`);
   }
+  await readSSE(res, log);
 }
 
 async function readSSE(res, log){
