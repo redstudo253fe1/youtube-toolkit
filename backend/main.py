@@ -62,6 +62,60 @@ def health():
     return {"status": "ok", "service": "ytbro-api"}
 
 
+# ── CDN Reachability Test ─────────────────────────────────────
+@app.get("/api/test-cdn")
+async def test_cdn():
+    """Test if this server can reach YouTube CDN (googlevideo.com) directly."""
+    import requests as req
+    CF_PROXY = "https://ytbro.redstudio2595.workers.dev/ytproxy"
+    IK = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+    results = {}
+
+    # Step 1: Get a stream URL via CF Worker
+    try:
+        r = req.post(CF_PROXY, json={
+            "target": f"https://www.youtube.com/youtubei/v1/player?key={IK}",
+            "headers": {"Content-Type": "application/json",
+                        "User-Agent": "com.google.android.youtube/20.10.38 (Linux; U; Android 11)"},
+            "body": {"context": {"client": {"clientName": "ANDROID", "clientVersion": "20.10.38"}},
+                     "videoId": "jNQXAC9IVRw"}
+        }, timeout=15)
+        data = r.json()
+        fmts = (data.get("streamingData", {}).get("adaptiveFormats", []))
+        audio = sorted([f for f in fmts if "audio" in f.get("mimeType", "")],
+                       key=lambda x: x.get("bitrate", 999999))
+        if not audio:
+            return {"error": "no_audio_formats", "player_status": data.get("playabilityStatus", {}).get("status")}
+        url = audio[0]["url"]
+        results["player"] = "ok"
+        results["url_host"] = url.split("/")[2]
+        results["content_length"] = audio[0].get("contentLength")
+    except Exception as e:
+        return {"error": f"player_fetch_failed: {e}"}
+
+    # Step 2: Try downloading 100KB directly from googlevideo.com
+    for ua_name, ua in [
+        ("android", "com.google.android.youtube/20.10.38 (Linux; U; Android 11)"),
+        ("vr", "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12; eureka-user Build/SQ3A.220605.009.A1) gzip"),
+        ("chrome", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36"),
+    ]:
+        try:
+            r2 = req.get(url, headers={"User-Agent": ua, "Range": "bytes=0-102399"}, timeout=15)
+            results[f"cdn_{ua_name}"] = f"HTTP {r2.status_code} size={len(r2.content)}"
+        except Exception as e:
+            results[f"cdn_{ua_name}"] = f"error: {e}"
+
+    # Step 3: Try chunk 3 offset with fresh URL (same URL, different range)
+    try:
+        r3 = req.get(url, headers={"User-Agent": "com.google.android.youtube/20.10.38 (Linux; U; Android 11)",
+                                    "Range": "bytes=409600-614399"}, timeout=15)
+        results["cdn_chunk3_400kb_plus"] = f"HTTP {r3.status_code} size={len(r3.content)}"
+    except Exception as e:
+        results["cdn_chunk3_400kb_plus"] = f"error: {e}"
+
+    return results
+
+
 # ── Video info ────────────────────────────────────────────────
 @app.post("/api/video/info")
 async def video_info(body: dict):
@@ -189,7 +243,16 @@ async def download_captions(body: dict):
         video_url = f"https://www.youtube.com/watch?v={video_id}"
 
         q.put({"type": "progress", "message": "Fetching captions…"})
-        title = get_video_title(video_id)
+        # Use oEmbed for title — yt-dlp tries to read browser cookies (none on HF Space)
+        try:
+            import requests as _r
+            _resp = _r.get(
+                f"https://www.youtube.com/oembed?url={video_url}&format=json",
+                timeout=8,
+            )
+            title = _resp.json().get("title", video_id) if _resp.ok else video_id
+        except Exception:
+            title = video_id
         segments = download_transcript(video_id, lang_code)
         if not segments:
             q.put({"type": "error", "message": "No captions found for this video."})
@@ -258,8 +321,22 @@ async def transcribe(body: dict):
             q.put({"type": "progress",
                    "message": f"[{format_timestamp(seg['start'])}] {seg['text'][:80]}"})
 
-        audio_path, title, duration = download_youtube_audio_for_groq(
-            video_url, on_status=on_status)
+        try:
+            audio_path, title, duration = download_youtube_audio_for_groq(
+                video_url, on_status=on_status)
+        except Exception as ex:
+            q.put({"type": "error", "message": (
+                f"YouTube audio download blocked from this server ({ex}). "
+                "Please switch to 'Upload Audio File' mode and use a free YouTube extractor "
+                "like cobalt.tools or yt5s.io to grab the audio first."
+            )})
+            return
+        if not audio_path:
+            q.put({"type": "error", "message": (
+                "YouTube blocks downloads from this server's IP. "
+                "Switch to 'Upload Audio File' mode — use cobalt.tools / yt5s.io to grab the audio, then upload it."
+            )})
+            return
         segments, detected_lang, stats = transcribe_with_groq(
             audio_path, api_key, model=model, language=language,
             on_status=on_status, on_segment=on_segment)
@@ -314,3 +391,99 @@ async def transcribe(body: dict):
         })
 
     return stream(task, url, api_key, model, language)
+
+
+# ── AI Transcription from uploaded audio file (Groq engine) ───
+from fastapi import UploadFile, File, Form
+
+@app.post("/api/transcribe/file")
+async def transcribe_file(
+    file: UploadFile = File(...),
+    api_key: str = Form(...),
+    model: str = Form("whisper-large-v3"),
+    language: str = Form(""),
+):
+    """Transcribe a user-uploaded audio file via Groq (no YouTube download)."""
+    import tempfile
+
+    # Save uploaded file to temp path
+    suffix = Path(file.filename or "audio").suffix or ".mp3"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    while True:
+        chunk = await file.read(1024 * 1024)
+        if not chunk:
+            break
+        tmp.write(chunk)
+    tmp.close()
+    audio_path = tmp.name
+    title = Path(file.filename or "audio").stem or "audio"
+
+    def task(q, audio_path, api_key, model, language, title):
+        from youtube_toolkit.core.groq_engine import transcribe_with_groq
+        from youtube_toolkit.core.utils import format_timestamp, sanitize_filename
+        from youtube_toolkit.web.share import upload_content
+
+        def on_status(msg):
+            q.put({"type": "progress", "message": msg})
+
+        def on_segment(seg):
+            q.put({"type": "progress",
+                   "message": f"[{format_timestamp(seg['start'])}] {seg['text'][:80]}"})
+
+        try:
+            segments, detected_lang, stats = transcribe_with_groq(
+                audio_path, api_key, model=model, language=(language or None),
+                on_status=on_status, on_segment=on_segment)
+        finally:
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
+
+        if not segments:
+            q.put({"type": "error", "message": "No transcript produced."})
+            return
+
+        paragraphs, texts = [], []
+        p_start, p_end = segments[0]["start"], segments[0]["end"]
+        for seg in segments:
+            if seg["start"] - p_end > 2.0 or (seg["start"] - p_start) > 30.0:
+                if texts:
+                    paragraphs.append({"start": p_start, "end": p_end,
+                                       "text": " ".join(texts)})
+                texts, p_start, p_end = [seg["text"]], seg["start"], seg["end"]
+            else:
+                texts.append(seg["text"])
+                p_end = seg["end"]
+        if texts:
+            paragraphs.append({"start": p_start, "end": p_end, "text": " ".join(texts)})
+
+        word_count = sum(len(s["text"].split()) for s in segments)
+        md = [
+            f"# Transcript: {title}", "",
+            f"- **Source:** Uploaded audio file",
+            f"- **Language:** {detected_lang}",
+            f"- **Words:** {word_count:,}",
+            f"- **Model:** {model} (Groq Cloud)",
+            f"- **Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "", "---", "",
+        ]
+        for p in paragraphs:
+            md.append(f"**[{format_timestamp(p['start'])}]** {p['text']}")
+            md.append("")
+        md_content = "\n".join(md)
+
+        q.put({"type": "progress", "message": "Generating AI link…"})
+        ai_url = upload_content(md_content, f"transcript_{sanitize_filename(title)}.md")
+
+        q.put({
+            "type": "result",
+            "title": title,
+            "content": md_content,
+            "ai_url": ai_url or "",
+            "stats": {"words": word_count, "language": detected_lang,
+                      "speed": stats.get("speed", 0)},
+            "filename": f"transcript_{sanitize_filename(title)}.md",
+        })
+
+    return stream(task, audio_path, api_key, model, language, title)
