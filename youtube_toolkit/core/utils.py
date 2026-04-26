@@ -16,7 +16,7 @@ def extract_video_id(url_or_id: str) -> str:
             return match.group(1)
     if re.match(r'^[\w-]{11}$', url_or_id.strip()):
         return url_or_id.strip()
-    return url_or_id.strip()
+    return ""
 
 
 def is_youtube_url(text: str) -> bool:
