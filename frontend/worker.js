@@ -1819,9 +1819,9 @@ function openChat(){
     state.contextLoaded = true;
     const title = state.videoTitle || result.title || 'this content';
     const fullContent = result.content || '';
-    // Send up to 200,000 chars (~50k tokens — fits in Claude Sonnet 200k, GPT-5 128k, Gemini 1M)
-    // For 837 comments at ~100 chars each = ~84k chars, full set fits
-    const MAX_CTX = 200000;
+    // Send up to 40,000 chars (~10k tokens — verified working with backend; ~300 typical comments)
+    // The chat backend (api-hoot) gets slow/unreliable past ~50k. 40k is the sweet spot.
+    const MAX_CTX = 40000;
     const content = fullContent.length > MAX_CTX
       ? fullContent.substring(0, MAX_CTX) + \`\\n\\n[TRUNCATED at \${MAX_CTX} chars — total content is \${fullContent.length} chars]\`
       : fullContent;
