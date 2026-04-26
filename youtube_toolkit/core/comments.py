@@ -17,22 +17,44 @@ SORT_BY_RECENT = 1
 
 # Stable innertube WEB client config — hardcoded so no page fetch needed
 _IK = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
-_CTX = {
-    "client": {
-        "hl": "en", "gl": "US",
-        "clientName": "WEB",
-        "clientVersion": "2.20240320.00.00",
+# Modern WEB client context (matches what real Chrome sends — fewer truncations server-side)
+_CLIENT_VERSION = "2.20251015.01.00"
+_USER_AGENT = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+               "AppleWebKit/537.36 (KHTML, like Gecko) "
+               "Chrome/131.0.0.0 Safari/537.36")
+
+def _build_context(visitor_data=None):
+    """Build innertube WEB context. Includes visitorData if provided (key for full pagination)."""
+    ctx = {
+        "client": {
+            "hl": "en", "gl": "US",
+            "clientName": "WEB",
+            "clientVersion": _CLIENT_VERSION,
+            "userAgent": _USER_AGENT,
+            "platform": "DESKTOP",
+            "clientFormFactor": "UNKNOWN_FORM_FACTOR",
+            "browserName": "Chrome",
+            "browserVersion": "131.0.0.0",
+            "osName": "Windows",
+            "osVersion": "10.0",
+            "screenPixelDensity": 1,
+            "screenDensityFloat": 1,
+            "utcOffsetMinutes": 0,
+            "timeZone": "UTC",
+        },
+        "user": {"lockedSafetyMode": False},
+        "request": {"useSsl": True, "internalExperimentFlags": [], "consistencyTokenJars": []},
     }
-}
+    if visitor_data:
+        ctx["client"]["visitorData"] = visitor_data
+    return ctx
+
+_CTX = _build_context()  # default ctx (used until we fetch visitorData)
 _YT_HEADERS = {
     "Content-Type": "application/json",
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
+    "User-Agent": _USER_AGENT,
     "X-YouTube-Client-Name": "1",
-    "X-YouTube-Client-Version": "2.20240320.00.00",
+    "X-YouTube-Client-Version": _CLIENT_VERSION,
     "Origin": "https://www.youtube.com",
     "Referer": "https://www.youtube.com/",
 }
@@ -132,10 +154,17 @@ def _parse_comments(data, owner_channel_id=None):
 
 def _get_sort_menu(video_id):
     """
-    Use innertube /next (POST) to get comment sort continuations + owner channel ID.
-    Returns (sort_menu, owner_channel_id).
+    Use innertube /next (POST) to get comment sort continuations + owner channel ID + visitorData.
+    Returns (sort_menu, owner_channel_id, ctx) where ctx has visitorData for subsequent calls.
     """
     data = _innertube_post("next", {"context": _CTX, "videoId": video_id})
+
+    # Extract visitorData (CRITICAL: YouTube uses this to give full pagination depth)
+    visitor_data = next(
+        (vd for vd in _search_dict(data, "visitorData") if isinstance(vd, str) and len(vd) > 5),
+        None,
+    )
+    ctx = _build_context(visitor_data) if visitor_data else _CTX
 
     # Extract video owner channel ID (UC... format) from the response
     owner_channel_id = next(
@@ -152,12 +181,17 @@ def _get_sort_menu(video_id):
             token = cmd.get("token") or cmd.get("continuation")
             if not token:
                 continue
-            data2 = _innertube_post("next", {"context": _CTX, "continuation": token})
+            data2 = _innertube_post("next", {"context": ctx, "continuation": token})
+            # Re-extract visitorData if found here too
+            vd2 = next((vd for vd in _search_dict(data2, "visitorData") if isinstance(vd, str) and len(vd) > 5), None)
+            if vd2 and vd2 != visitor_data:
+                visitor_data = vd2
+                ctx = _build_context(visitor_data)
             sort_menu = next(_search_dict(data2, "sortFilterSubMenuRenderer"), {}).get("subMenuItems", [])
             if sort_menu:
                 break
 
-    return sort_menu, owner_channel_id
+    return sort_menu, owner_channel_id, ctx
 
 
 async def _async_innertube(session, endpoint, payload):
@@ -225,8 +259,10 @@ def _ep_token(ep):
     return t if isinstance(t, str) and len(t) > 10 else None
 
 
-async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None):
+async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None, ctx=None):
     """Fetch all replies for a thread, with aggressive retry. Per-token max 5 retries."""
+    if ctx is None:
+        ctx = _CTX
     conts = [cont_ep]
     seen_tokens = set()
     retry_count = {}  # token -> retry count
@@ -236,7 +272,7 @@ async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None
         if not token or token in seen_tokens:
             continue
 
-        resp = await _async_innertube(session, "next", {"context": _CTX, "continuation": token})
+        resp = await _async_innertube(session, "next", {"context": ctx, "continuation": token})
 
         # Detect failure or YouTube error and retry the SAME token (up to 5 times)
         is_failed = (not resp) or (next(_search_dict(resp, "externalErrorMessage"), None) is not None)
@@ -259,7 +295,9 @@ async def _fetch_replies(session, cont_ep, results, stats, owner_channel_id=None
                 conts.append(ep2)
 
 
-async def _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id=None):
+async def _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id=None, ctx=None):
+    if ctx is None:
+        ctx = _CTX
     if not sort_menu or sort_by >= len(sort_menu):
         raise RuntimeError("Could not get comment sort menu from YouTube.")
 
@@ -295,7 +333,7 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
             if not batch:
                 continue
 
-            payloads = [{"context": _CTX, "continuation": t} for t in batch]
+            payloads = [{"context": ctx, "continuation": t} for t in batch]
             results = await _async_innertube_batch(session, payloads)
 
             batch_got_data = False
@@ -325,7 +363,7 @@ async def _download_async(video_id, sort_by, max_comments, on_progress, sort_men
 
                 for ep in reply_c:
                     task = asyncio.ensure_future(
-                        _fetch_replies(session, ep, all_replies, stats, owner_channel_id)
+                        _fetch_replies(session, ep, all_replies, stats, owner_channel_id, ctx)
                     )
                     reply_tasks.append(task)
 
@@ -389,13 +427,13 @@ def download_comments(video_url, sort_by=SORT_BY_RECENT, max_comments=0, on_prog
     except Exception:
         title = video_id
 
-    sort_menu, owner_channel_id = _get_sort_menu(video_id)
+    sort_menu, owner_channel_id, ctx = _get_sort_menu(video_id)
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
         raw = loop.run_until_complete(
-            _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id)
+            _download_async(video_id, sort_by, max_comments, on_progress, sort_menu, owner_channel_id, ctx)
         )
     finally:
         loop.close()
