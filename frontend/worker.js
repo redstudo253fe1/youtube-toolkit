@@ -24,116 +24,11 @@ export default {
         return new Response(JSON.stringify(results), {headers:{'Content-Type':'application/json',...cors}});
       } catch(e) { return new Response(JSON.stringify({error:e.message}), {status:500, headers:cors}); }
     }
-    if (url.pathname === '/ytaudio' && request.method === 'POST') {
-      try {
-        const {videoId} = await request.json();
-        const ytUrl = `https://www.youtube.com/watch?v=${videoId}`;
-
-        // ── Attempt 1: Cobalt API (handles YouTube CDN IP restrictions) ──
-        try {
-          const cobaltR = await fetch('https://api.cobalt.tools/', {
-            method: 'POST',
-            headers: {'Content-Type':'application/json','Accept':'application/json'},
-            body: JSON.stringify({url: ytUrl, downloadMode:'audio', audioFormat:'mp3', audioBitrate:'64'}),
-          });
-          if (cobaltR.ok) {
-            const cd = await cobaltR.json();
-            if ((cd.status === 'redirect' || cd.status === 'tunnel') && cd.url) {
-              const audioR = await fetch(cd.url);
-              if (audioR.ok) {
-                // Get title via oEmbed (lightweight)
-                let titleStr = videoId;
-                try {
-                  const oe = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(ytUrl)}&format=json`, {headers:{'User-Agent':'Mozilla/5.0'}});
-                  if (oe.ok) { const oed = await oe.json(); titleStr = oed.title || videoId; }
-                } catch {}
-                return new Response(audioR.body, {status:200, headers:{
-                  'Content-Type':'audio/mpeg',
-                  'X-Title': encodeURIComponent(titleStr),
-                  'X-Duration':'0',
-                  'X-Ext':'mp3',
-                  'Access-Control-Allow-Origin':'*',
-                  'Access-Control-Expose-Headers':'X-Title,X-Duration,X-Ext',
-                }});
-              }
-            }
-          }
-        } catch {}
-
-        // ── Attempt 2: ANDROID player + range-param chunked TransformStream ──
-        const IK = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
-        const ytHeaders = {'Content-Type':'application/json','User-Agent':'com.google.android.youtube/20.10.38 (Linux; U; Android 11)'};
-        const dlHeaders = {'User-Agent':'com.google.android.youtube/20.10.38 (Linux; U; Android 11)'};
-        let playerData = null;
-        for (let i = 0; i < 4; i++) {
-          const pr = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${IK}`, {
-            method:'POST', headers:ytHeaders,
-            body:JSON.stringify({context:{client:{clientName:'ANDROID',clientVersion:'20.10.38'}}, videoId}),
-          });
-          const d = await pr.json();
-          if (d?.streamingData?.adaptiveFormats?.length) { playerData = d; break; }
-          await new Promise(r => setTimeout(r, 400));
-        }
-        if (!playerData) return new Response(JSON.stringify({error:'No player data'}), {status:500, headers:cors});
-        const title = playerData.videoDetails?.title || videoId;
-        const duration = parseInt(playerData.videoDetails?.lengthSeconds || '0');
-        const fmts = (playerData.streamingData?.adaptiveFormats || [])
-          .filter(f => f.mimeType?.startsWith('audio/') && f.url)
-          .sort((a,b) => (a.bitrate||999999)-(b.bitrate||999999));
-        if (!fmts.length) return new Response(JSON.stringify({error:'No audio format'}), {status:500, headers:cors});
-        const fmt = fmts[0];
-        const ext = fmt.mimeType?.includes('mp4') ? 'm4a' : 'webm';
-        const mimeType = fmt.mimeType?.split(';')[0] || 'audio/mp4';
-        // contentLength is included in adaptiveFormats by ANDROID player
-        const totalSize = parseInt(fmt.contentLength || '0');
-        if (!totalSize) return new Response(JSON.stringify({error:'No contentLength in format'}), {status:500, headers:cors});
-
-        // Stream in 200KB chunks using YouTube-native &range= URL param (same edge IP)
-        const CHUNK = 200 * 1024;
-        const { readable, writable } = new TransformStream();
-        const writer = writable.getWriter();
-        (async () => {
-          try {
-            let pos = 0;
-            while (pos < totalSize) {
-              const end = Math.min(pos + CHUNK - 1, totalSize - 1);
-              const rangeUrl = fmt.url + `&range=${pos}-${end}`;
-              const cr = await fetch(rangeUrl, {headers: dlHeaders});
-              if (!cr.ok) break;
-              const chunk = await cr.arrayBuffer();
-              if (chunk.byteLength === 0) break;
-              await writer.write(new Uint8Array(chunk));
-              pos += chunk.byteLength;
-            }
-          } finally {
-            writer.close();
-          }
-        })();
-        return new Response(readable, {status:200, headers:{
-          'Content-Type': mimeType,
-          'X-Title': encodeURIComponent(title),
-          'X-Duration': String(duration),
-          'X-Ext': ext,
-          'Access-Control-Allow-Origin':'*',
-          'Access-Control-Expose-Headers':'X-Title,X-Duration,X-Ext',
-        }});
-      } catch(e) { return new Response(JSON.stringify({error:e.message}), {status:500, headers:cors}); }
-    }
     if (url.pathname === '/getproxy' && request.method === 'POST') {
       try {
         const {target} = await request.json();
         const resp = await fetch(target, {headers:{'User-Agent':'Mozilla/5.0'}});
         return new Response(await resp.text(), {status:resp.status, headers:{'Content-Type':'text/plain',...cors}});
-      } catch(e) { return new Response(JSON.stringify({error:e.message}), {status:500, headers:cors}); }
-    }
-    if (url.pathname === '/audioproxy' && request.method === 'POST') {
-      try {
-        const {target} = await request.json();
-        const resp = await fetch(target, {headers:{'User-Agent':'com.google.android.youtube/20.10.38 (Linux; U; Android 11)'}});
-        const headers = {'Access-Control-Allow-Origin':'*', 'Content-Type': resp.headers.get('Content-Type') || 'application/octet-stream'};
-        const cl = resp.headers.get('Content-Length');
-        if (cl) headers['Content-Length'] = cl;
-        return new Response(resp.body, {status: resp.status, headers});
       } catch(e) { return new Response(JSON.stringify({error:e.message}), {status:500, headers:cors}); }
     }
     if (url.pathname.startsWith('/youtubei/')) {
@@ -154,7 +49,6 @@ export default {
     }
     if (url.pathname === '/aiproxy' && request.method === 'POST') {
       try {
-        // Force streaming for fast TTFB feel
         let payload = await request.json();
         payload.stream = true;
         const resp = await fetch('https://api-hoot.onrender.com/v1/chat/completions', {
@@ -162,7 +56,6 @@ export default {
           headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
           body: JSON.stringify(payload),
         });
-        // Stream raw SSE bytes back to client
         const ct = resp.headers.get('Content-Type') || 'text/event-stream';
         return new Response(resp.body, {
           status: resp.status,
@@ -173,4 +66,1693 @@ export default {
     return new Response(HTML, {headers:{'Content-Type':'text/html; charset=utf-8'}});
   }
 };
-const HTML = "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\"/>\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"/>\n<title>ytbro — Analyze YouTube with AI</title>\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\"/>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap\" rel=\"stylesheet\"/>\n<script src=\"https://cdn.jsdelivr.net/npm/marked/marked.min.js\"></script>\n<style>\n*{margin:0;padding:0;box-sizing:border-box}\n:root{\n  --bg:#07070f;--surface:#0e0e1c;--surface2:#14142a;--surface3:#1a1a35;\n  --border:rgba(124,58,237,.18);--border2:rgba(255,255,255,.07);\n  --a1:#7c3aed;--a2:#e94560;\n  --grad:linear-gradient(135deg,#7c3aed,#e94560);\n  --text:#e2e8f0;--muted:#6b7280;--muted2:#4b5563;\n  --success:#10b981;--error:#ef4444;--warn:#f59e0b;\n  --r:14px;--r2:10px;--r3:8px;\n}\nhtml{scroll-behavior:smooth}\nbody{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}\n::-webkit-scrollbar{width:6px;height:6px}\n::-webkit-scrollbar-track{background:var(--surface)}\n::-webkit-scrollbar-thumb{background:var(--a1);border-radius:3px}\n\n/* ── Navbar ── */\nnav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filter:blur(20px);border-bottom:1px solid var(--border2);padding:.9rem 1.5rem;display:flex;align-items:center;justify-content:space-between}\n.logo{font-size:1.35rem;font-weight:800;background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-.02em}\n.logo span{font-weight:300;opacity:.7}\n.nav-badge{font-size:.72rem;background:var(--surface2);color:var(--muted);border:1px solid var(--border2);padding:.2rem .6rem;border-radius:20px}\n\n/* ── Layout ── */\n.container{max-width:1100px;margin:0 auto;padding:0 1.25rem}\n.hidden{display:none!important}\n\n/* ── Hero ── */\n#hero{padding:4rem 0 3rem;text-align:center}\n.hero-eyebrow{font-size:.78rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--a1);margin-bottom:1rem}\n.hero-title{font-size:clamp(2rem,5vw,3.2rem);font-weight:800;line-height:1.15;letter-spacing:-.03em;margin-bottom:.8rem}\n.hero-title .grad{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent}\n.hero-sub{color:var(--muted);font-size:1.05rem;margin-bottom:2.5rem;max-width:500px;margin-left:auto;margin-right:auto}\n\n/* ── URL Input ── */\n.url-box{display:flex;gap:.6rem;max-width:660px;margin:0 auto;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--r);padding:.55rem .55rem .55rem .9rem;transition:border-color .2s}\n.url-box:focus-within{border-color:var(--a1)}\n.url-box input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:1rem;font-family:inherit;min-width:0}\n.url-box input::placeholder{color:var(--muted2)}\n.btn-go{background:var(--grad);color:#fff;border:none;border-radius:var(--r3);padding:.65rem 1.4rem;font-weight:700;font-size:.95rem;cursor:pointer;white-space:nowrap;transition:opacity .2s,transform .15s;display:flex;align-items:center;gap:.4rem}\n.btn-go:hover{opacity:.88;transform:translateY(-1px)}\n.btn-go:active{transform:translateY(0)}\n.btn-go svg{width:16px;height:16px}\n\n/* ── Feature pills ── */\n.pills{display:flex;justify-content:center;gap:.7rem;flex-wrap:wrap;margin-top:2rem}\n.pill{display:flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:.4rem .9rem;font-size:.8rem;color:var(--muted);font-weight:500}\n.pill span{font-size:.95rem}\n\n/* ── Video info card ── */\n#video-info{padding:1.5rem 0}\n.video-card{display:flex;gap:1.2rem;align-items:center;background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.1rem 1.3rem}\n.video-thumb{width:120px;height:68px;border-radius:var(--r3);object-fit:cover;flex-shrink:0;background:var(--surface2)}\n.video-meta h3{font-size:1rem;font-weight:600;line-height:1.35;margin-bottom:.3rem}\n.video-id{font-size:.78rem;color:var(--muted);font-family:monospace;background:var(--surface2);padding:.15rem .5rem;border-radius:4px;display:inline-block}\n\n/* ── Action tabs ── */\n#actions{padding:.5rem 0 1.5rem}\n.tabs{display:flex;gap:.5rem;margin-bottom:1.2rem}\n.tab{flex:1;display:flex;align-items:center;justify-content:center;gap:.5rem;padding:.75rem;background:var(--surface);border:1.5px solid var(--border2);border-radius:var(--r2);cursor:pointer;font-weight:600;font-size:.9rem;color:var(--muted);transition:all .2s}\n.tab:hover{border-color:var(--a1);color:var(--text)}\n.tab.active{border-color:var(--a1);color:var(--text);background:rgba(124,58,237,.1)}\n.tab-icon{font-size:1.1rem}\n\n/* ── Options panel ── */\n.options-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.3rem}\n.opt-row{display:grid;grid-template-columns:1fr 1fr;gap:.9rem;margin-bottom:1rem}\n.opt-group label{display:block;font-size:.78rem;font-weight:600;color:var(--muted);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.06em}\n.opt-group select,.opt-group input[type=number],.opt-group input[type=text],.opt-group input[type=password]{width:100%;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.55rem .75rem;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;transition:border-color .2s}\n.opt-group select:focus,.opt-group input:focus{border-color:var(--a1)}\n.opt-group select option{background:var(--surface2)}\n.lang-list{max-height:160px;overflow-y:auto;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);margin-top:.4rem}\n.lang-item{padding:.5rem .8rem;cursor:pointer;font-size:.88rem;display:flex;justify-content:space-between;align-items:center;transition:background .15s}\n.lang-item:hover,.lang-item.selected{background:rgba(124,58,237,.15)}\n.lang-badge{font-size:.7rem;background:var(--surface);color:var(--muted);padding:.1rem .4rem;border-radius:4px}\n.check-langs-btn{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--r3);padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;width:100%;transition:all .2s;margin-bottom:.7rem}\n.check-langs-btn:hover{background:rgba(124,58,237,.15)}\n.btn-main{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.8rem;background:var(--grad);color:#fff;border:none;border-radius:var(--r3);font-weight:700;font-size:.95rem;cursor:pointer;transition:opacity .2s,transform .15s;margin-top:.5rem}\n.btn-main:hover{opacity:.88;transform:translateY(-1px)}\n.btn-main:disabled{opacity:.4;cursor:not-allowed;transform:none}\n.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:.6rem 0;border-top:1px solid var(--border2);margin-top:.8rem}\n.toggle-label{font-size:.85rem;color:var(--muted);font-weight:500}\n.toggle{position:relative;width:40px;height:22px}\n.toggle input{opacity:0;width:0;height:0}\n.toggle-slider{position:absolute;inset:0;background:var(--surface3);border-radius:11px;cursor:pointer;transition:.3s}\n.toggle-slider:before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.3s}\n.toggle input:checked+.toggle-slider{background:var(--a1)}\n.toggle input:checked+.toggle-slider:before{transform:translateX(18px)}\n\n/* ── Processing ── */\n#processing{padding:1.5rem 0}\n.proc-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);padding:1.3rem}\n.proc-header{display:flex;align-items:center;gap:.7rem;margin-bottom:1rem}\n.spinner{width:20px;height:20px;border:2px solid var(--border2);border-top-color:var(--a1);border-radius:50%;animation:spin .8s linear infinite;flex-shrink:0}\n@keyframes spin{to{transform:rotate(360deg)}}\n.proc-title{font-weight:600;font-size:.95rem}\n.log-box{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.8rem 1rem;font-size:.82rem;font-family:monospace;color:#a5f3fc;max-height:220px;overflow-y:auto;line-height:1.7}\n.log-line{padding:.05rem 0}\n.log-line.err{color:var(--error)}\n.log-line.ok{color:var(--success)}\n\n/* ── Result ── */\n#result{padding:1.5rem 0}\n.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;align-items:start}\n@media(max-width:720px){.result-grid{grid-template-columns:1fr}.opt-row{grid-template-columns:1fr}}\n.result-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;height:72vh;min-height:480px}\n.result-card-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}\n.result-card-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}\n.result-card-body{padding:1.1rem;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}\n.content-preview{font-size:.82rem;color:var(--muted);line-height:1.65;flex:1;overflow-y:auto;white-space:pre-wrap;font-family:monospace;min-height:0}\n.result-actions{padding:.9rem 1.1rem;border-top:1px solid var(--border2);display:flex;gap:.6rem;flex-wrap:wrap;flex-shrink:0}\n.btn-dl{display:flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--r3);padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}\n.btn-dl:hover{background:rgba(124,58,237,.15);border-color:var(--a1)}\n.btn-chat{display:flex;align-items:center;gap:.4rem;background:var(--grad);color:#fff;border:none;border-radius:var(--r3);padding:.5rem 1.1rem;font-size:.85rem;font-weight:700;cursor:pointer;transition:opacity .2s}\n.btn-chat:hover{opacity:.85}\n.ai-link-box{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.25);border-radius:var(--r3);padding:.7rem .9rem;margin-top:.8rem;font-size:.8rem}\n.ai-link-label{color:var(--success);font-weight:600;margin-bottom:.3rem}\n.ai-link-url{color:var(--text);font-family:monospace;word-break:break-all;font-size:.78rem}\n.copy-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:4px;padding:.15rem .5rem;font-size:.72rem;cursor:pointer;margin-left:.5rem;vertical-align:middle;transition:all .2s}\n.copy-btn:hover{border-color:var(--a1);color:var(--text)}\n\n/* ── Chat panel ── */\n#chat-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}\n.chat-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem;flex-shrink:0}\n.chat-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}\n.chat-controls{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}\n.model-select{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);color:var(--text);font-size:.8rem;padding:.35rem .6rem;outline:none;cursor:pointer;font-family:inherit}\n.think-toggle{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--muted);cursor:pointer}\n.think-toggle input{accent-color:var(--a1)}\n.chat-messages{flex:1;overflow-y:auto;padding:.9rem 1rem;display:flex;flex-direction:column;gap:.8rem;min-height:0}\n.msg{display:flex;flex-direction:column;gap:.25rem;max-width:85%}\n.msg.user{align-self:flex-end;align-items:flex-end}\n.msg.assistant{align-self:flex-start;align-items:flex-start}\n.msg-bubble{padding:.7rem .95rem;border-radius:var(--r2);font-size:.88rem;line-height:1.6;word-break:break-word}\n.msg.user .msg-bubble{background:var(--grad);color:#fff;border-bottom-right-radius:4px}\n.msg.assistant .msg-bubble{background:var(--surface2);border:1px solid var(--border2);color:var(--text);border-bottom-left-radius:4px}\n.msg.assistant .msg-bubble h1,.msg.assistant .msg-bubble h2,.msg.assistant .msg-bubble h3{font-size:1em;font-weight:700;margin:.4rem 0 .2rem}\n.msg.assistant .msg-bubble p{margin:.3rem 0}\n.msg.assistant .msg-bubble ul,.msg.assistant .msg-bubble ol{padding-left:1.2rem;margin:.3rem 0}\n.msg.assistant .msg-bubble code{background:rgba(255,255,255,.08);padding:.1rem .3rem;border-radius:3px;font-family:monospace;font-size:.85em}\n.msg.assistant .msg-bubble pre{background:rgba(0,0,0,.3);border:1px solid var(--border2);border-radius:6px;padding:.7rem;overflow-x:auto;margin:.5rem 0}\n.msg.assistant .msg-bubble pre code{background:none;padding:0}\n.msg-meta{font-size:.7rem;color:var(--muted2)}\n.thinking-bubble{background:rgba(124,58,237,.08);border:1px dashed rgba(124,58,237,.3);border-radius:var(--r2);padding:.6rem .9rem;font-size:.82rem;color:var(--a1);display:flex;align-items:center;gap:.5rem}\n.typing-dots span{display:inline-block;width:5px;height:5px;background:var(--a1);border-radius:50%;animation:bounce .9s infinite}\n.typing-dots span:nth-child(2){animation-delay:.15s}\n.typing-dots span:nth-child(3){animation-delay:.3s}\n@keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}\n.chat-input-area{padding:.8rem;border-top:1px solid var(--border2);background:var(--surface);flex-shrink:0}\n.upload-preview{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}\n.upload-chip{display:flex;align-items:center;gap:.3rem;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:.2rem .5rem;font-size:.75rem;color:var(--muted)}\n.upload-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;line-height:1}\n.chat-row{display:flex;gap:.5rem;align-items:flex-end}\n.chat-input{flex:1;background:var(--surface2);border:1.5px solid var(--border2);border-radius:var(--r3);padding:.65rem .85rem;color:var(--text);font-size:.9rem;font-family:inherit;outline:none;resize:none;max-height:120px;line-height:1.5;transition:border-color .2s}\n.chat-input:focus{border-color:var(--a1)}\n.chat-btns{display:flex;gap:.4rem;flex-shrink:0}\n.btn-upload{background:var(--surface2);border:1px solid var(--border2);color:var(--muted);border-radius:var(--r3);width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:all .2s}\n.btn-upload:hover{border-color:var(--a1);color:var(--text)}\n.btn-send{background:var(--grad);color:#fff;border:none;border-radius:var(--r3);width:38px;height:38px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:1rem;transition:opacity .2s}\n.btn-send:hover{opacity:.85}\n.btn-send:disabled{opacity:.4;cursor:not-allowed}\n.btn-clear{background:none;border:1px solid var(--border2);color:var(--muted);border-radius:var(--r3);padding:.3rem .7rem;font-size:.75rem;cursor:pointer;transition:all .2s}\n.btn-clear:hover{border-color:var(--error);color:var(--error)}\n\n/* ── Empty state / tips ── */\n.chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:.5rem;padding:1.5rem;text-align:center}\n.chat-empty-icon{font-size:2rem;opacity:.4}\n.chat-empty p{font-size:.85rem}\n.tip-chips{display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center;margin-top:.7rem}\n.tip{background:var(--surface2);border:1px solid var(--border2);border-radius:20px;padding:.35rem .8rem;font-size:.78rem;cursor:pointer;color:var(--muted);transition:all .2s}\n.tip:hover{border-color:var(--a1);color:var(--text)}\n\n/* ── Stats bar ── */\n.stats-bar{display:flex;gap:1.2rem;flex-wrap:wrap;padding:.7rem 1.1rem;background:rgba(16,185,129,.05);border-top:1px solid rgba(16,185,129,.15)}\n.stat{display:flex;align-items:center;gap:.35rem;font-size:.8rem}\n.stat-val{font-weight:700;color:var(--success)}\n.stat-lbl{color:var(--muted)}\n\n/* ── Source toggle (YouTube URL vs Upload) ── */\n.src-toggle{display:flex;gap:.5rem;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.3rem}\n.src-btn{flex:1;background:transparent;border:none;color:var(--muted);padding:.55rem .8rem;border-radius:6px;font-weight:600;font-size:.85rem;cursor:pointer;transition:all .2s;font-family:inherit}\n.src-btn:hover{color:var(--text)}\n.src-btn.active{background:var(--grad);color:#fff}\n\n/* ── File input ── */\n#audio-file{display:block;width:100%;padding:.7rem;background:var(--surface2);border:1px dashed var(--border);border-radius:var(--r3);color:var(--text);font-family:inherit;font-size:.85rem;cursor:pointer}\n#audio-file::file-selector-button{background:var(--grad);color:#fff;border:none;border-radius:6px;padding:.4rem .8rem;cursor:pointer;font-weight:600;margin-right:.6rem}\n\n/* ── YouTube helper ── */\n.yt-helper{margin:.7rem 0 1rem;background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);padding:.6rem .8rem}\n.yt-helper summary{cursor:pointer;color:var(--a1);font-size:.85rem;font-weight:600;outline:none}\n.yt-helper summary:hover{opacity:.85}\n.yt-tool{display:flex;align-items:center;justify-content:space-between;padding:.5rem .7rem;background:var(--surface);border:1px solid var(--border2);border-radius:6px;margin-bottom:.4rem;text-decoration:none;color:var(--text);font-size:.85rem;font-weight:500;transition:all .15s}\n.yt-tool:hover{border-color:var(--a1);transform:translateX(2px)}\n.yt-tool span{font-size:.72rem;color:var(--muted);font-weight:400}\n\n/* ── Whisper progress ── */\n.whisper-progress{margin-top:.6rem;font-size:.8rem;color:var(--muted)}\n.whisper-bar{height:4px;background:var(--surface2);border-radius:2px;overflow:hidden;margin-top:.3rem}\n.whisper-bar-fill{height:100%;background:var(--grad);width:0%;transition:width .2s}\n</style>\n</head>\n<body>\n\n<!-- Navbar -->\n<nav>\n  <div class=\"logo\">yt<span>bro</span></div>\n  <div class=\"nav-badge\">AI-Powered YouTube Analyzer</div>\n</nav>\n\n<!-- Hero / URL input (always visible) -->\n<div class=\"container\">\n<section id=\"hero\">\n  <div class=\"hero-eyebrow\">Free · No Sign Up · Instant</div>\n  <h1 class=\"hero-title\">Analyze YouTube<br>with <span class=\"grad\">AI</span></h1>\n  <p class=\"hero-sub\">Download comments, captions & transcripts — then chat with any AI model about it</p>\n\n  <div class=\"url-box\">\n    <input id=\"url-input\" type=\"text\" placeholder=\"Paste YouTube URL or video ID…\" autocomplete=\"off\" spellcheck=\"false\"/>\n    <button class=\"btn-go\" id=\"btn-analyze\" onclick=\"analyzeUrl()\">\n      <svg viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M3 8h10M9 4l4 4-4 4\"/></svg>\n      Analyze\n    </button>\n  </div>\n\n  <div class=\"pills\">\n    <div class=\"pill\"><span>💬</span> Comments</div>\n    <div class=\"pill\"><span>📝</span> Captions</div>\n    <div class=\"pill\"><span>🎙️</span> AI Transcription</div>\n    <div class=\"pill\"><span>🤖</span> Chat with Claude · GPT-5 · Gemini</div>\n  </div>\n</section>\n\n<!-- Video info -->\n<section id=\"video-info\" class=\"hidden\">\n  <div class=\"video-card\">\n    <img id=\"vid-thumb\" class=\"video-thumb\" src=\"\" alt=\"thumbnail\"/>\n    <div class=\"video-meta\">\n      <h3 id=\"vid-title\">Loading…</h3>\n      <span id=\"vid-id\" class=\"video-id\"></span>\n    </div>\n  </div>\n</section>\n\n<!-- Action tabs + options -->\n<section id=\"actions\" class=\"hidden\">\n  <div class=\"tabs\">\n    <div class=\"tab active\" id=\"tab-comments\" onclick=\"switchTab('comments')\">\n      <span class=\"tab-icon\">💬</span> Comments\n    </div>\n    <div class=\"tab\" id=\"tab-captions\" onclick=\"switchTab('captions')\">\n      <span class=\"tab-icon\">📝</span> Captions\n    </div>\n    <div class=\"tab\" id=\"tab-transcribe\" onclick=\"switchTab('transcribe')\">\n      <span class=\"tab-icon\">🎙️</span> Transcribe\n    </div>\n  </div>\n\n  <!-- Comments options -->\n  <div id=\"opt-comments\" class=\"options-panel\">\n    <div class=\"opt-row\">\n      <div class=\"opt-group\">\n        <label>Sort By</label>\n        <select id=\"sort-mode\"><option value=\"recent\">Recent</option><option value=\"popular\">Popular</option></select>\n      </div>\n      <div class=\"opt-group\">\n        <label>Max Comments (0 = all)</label>\n        <input type=\"number\" id=\"max-comments\" value=\"0\" min=\"0\" step=\"100\"/>\n      </div>\n    </div>\n    <button class=\"btn-main\" onclick=\"startDownload('comments')\">\n      <span>⬇️</span> Download Comments\n    </button>\n  </div>\n\n  <!-- Captions options -->\n  <div id=\"opt-captions\" class=\"options-panel hidden\">\n    <button class=\"check-langs-btn\" onclick=\"checkLanguages()\">🔍 Check Available Languages</button>\n    <div id=\"lang-list-wrap\" class=\"hidden\">\n      <div class=\"opt-group\">\n        <label>Select Language</label>\n        <div class=\"lang-list\" id=\"lang-list\"></div>\n      </div>\n    </div>\n    <button class=\"btn-main\" id=\"btn-dl-captions\" onclick=\"startDownload('captions')\" style=\"margin-top:.8rem\">\n      <span>⬇️</span> Download Captions\n    </button>\n  </div>\n\n  <!-- Transcribe options -->\n  <div id=\"opt-transcribe\" class=\"options-panel hidden\">\n    <div class=\"opt-row\" style=\"grid-template-columns:1fr;margin-bottom:.6rem\">\n      <div class=\"src-toggle\">\n        <button class=\"src-btn active\" id=\"src-url\" onclick=\"setSrc('url')\">📺 From YouTube URL</button>\n        <button class=\"src-btn\" id=\"src-file\" onclick=\"setSrc('file')\">📁 Upload Audio File</button>\n      </div>\n    </div>\n\n    <div id=\"src-file-section\" class=\"hidden\">\n      <div class=\"opt-group\" style=\"margin-bottom:.6rem\">\n        <label>Audio File</label>\n        <input type=\"file\" id=\"audio-file\" accept=\"audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4\" onchange=\"onAudioFile(this)\"/>\n        <div id=\"audio-file-info\" style=\"font-size:.78rem;color:var(--muted);margin-top:.5rem\"></div>\n      </div>\n      <details class=\"yt-helper\">\n        <summary>💡 Need to extract audio from a YouTube URL? Click here</summary>\n        <div style=\"padding:.6rem 0\">\n          <p style=\"margin-bottom:.5rem;color:var(--muted);font-size:.85rem\">Free tools to download YouTube audio (then upload below):</p>\n          <a href=\"https://cobalt.tools\" target=\"_blank\" class=\"yt-tool\">🟣 Cobalt.tools <span>clean, no ads</span></a>\n          <a href=\"https://yt5s.io\" target=\"_blank\" class=\"yt-tool\">🟢 YT5S.io <span>fast MP3 converter</span></a>\n          <a href=\"https://en.savefrom.net\" target=\"_blank\" class=\"yt-tool\">🔵 SaveFrom.net <span>browser extension</span></a>\n          <a href=\"https://9convert.com\" target=\"_blank\" class=\"yt-tool\">🟠 9Convert.com <span>simple alternative</span></a>\n        </div>\n      </details>\n    </div>\n\n    <div class=\"opt-row\">\n      <div class=\"opt-group\">\n        <label>Engine</label>\n        <select id=\"trans-engine\" onchange=\"onEngineChange()\">\n          <option value=\"browser\">🌐 Browser Whisper (free · 99 langs · unlimited)</option>\n          <option value=\"groq\">⚡ Groq Cloud (faster · needs key)</option>\n        </select>\n      </div>\n      <div class=\"opt-group\">\n        <label id=\"trans-model-label\">Model</label>\n        <select id=\"trans-model\">\n          <option value=\"Xenova/whisper-tiny\">Tiny — fastest (~75MB)</option>\n          <option value=\"Xenova/whisper-base\" selected>Base — balanced (~150MB)</option>\n          <option value=\"Xenova/whisper-small\">Small — accurate (~480MB)</option>\n        </select>\n      </div>\n    </div>\n    <div id=\"groq-key-row\" class=\"opt-row hidden\" style=\"grid-template-columns:1fr\">\n      <div class=\"opt-group\">\n        <label>Groq API Key <a href=\"https://console.groq.com/keys\" target=\"_blank\" style=\"color:var(--a1);font-size:.75rem;text-decoration:none\">(get free key)</a></label>\n        <input type=\"password\" id=\"groq-key\" placeholder=\"gsk_…\" oninput=\"saveGroqKey(this.value)\"/>\n      </div>\n    </div>\n    <button class=\"btn-main\" onclick=\"startTranscribe()\">\n      <span>🎙️</span> Generate Transcript\n    </button>\n  </div>\n</section>\n\n<!-- Processing -->\n<section id=\"processing\" class=\"hidden\">\n  <div class=\"proc-card\">\n    <div class=\"proc-header\">\n      <div class=\"spinner\"></div>\n      <div class=\"proc-title\" id=\"proc-title\">Processing…</div>\n    </div>\n    <div class=\"log-box\" id=\"log-box\"></div>\n  </div>\n</section>\n\n<!-- Result -->\n<section id=\"result\" class=\"hidden\">\n  <div class=\"result-grid\">\n    <!-- Content preview -->\n    <div class=\"result-card\">\n      <div class=\"result-card-header\">\n        <div class=\"result-card-title\"><span id=\"result-icon\">📄</span> <span id=\"result-label\">Content</span></div>\n        <div id=\"result-stats\" style=\"font-size:.78rem;color:var(--muted)\"></div>\n      </div>\n      <div class=\"result-card-body\">\n        <div class=\"content-preview\" id=\"content-preview\"></div>\n        <div id=\"ai-link-box\" class=\"ai-link-box hidden\">\n          <div class=\"ai-link-label\">🤖 AI-Readable Link</div>\n          <div class=\"ai-link-url\" id=\"ai-link-url\"></div>\n          <button class=\"copy-btn\" onclick=\"copyAiLink()\">Copy</button>\n        </div>\n      </div>\n      <div class=\"result-actions\">\n        <a id=\"btn-download\" class=\"btn-dl\" href=\"#\" download>\n          <span>⬇️</span> Download .md\n        </a>\n        <button class=\"btn-chat\" onclick=\"openChat()\">\n          <span>🤖</span> Analyze with AI\n        </button>\n      </div>\n    </div>\n\n    <!-- Chat panel -->\n    <div id=\"chat-panel\" class=\"result-card\">\n      <div class=\"chat-header\">\n        <div class=\"chat-title\">🤖 AI Chat</div>\n        <div class=\"chat-controls\">\n          <select class=\"model-select\" id=\"chat-model\">\n            <option value=\"claude\">Claude (Sonnet)</option>\n            <option value=\"claude-opus\">Claude Opus</option>\n            <option value=\"gpt-5.4\">GPT-5.4</option>\n            <option value=\"gemini\">Gemini</option>\n            <option value=\"sonar-pro\">Sonar Pro</option>\n            <option value=\"sonar\">Sonar</option>\n            <option value=\"r1\">DeepSeek R1</option>\n            <option value=\"reasoning\">Reasoning</option>\n            <option value=\"deep-research\">Deep Research</option>\n          </select>\n          <label class=\"think-toggle\">\n            <input type=\"checkbox\" id=\"thinking-toggle\"/> Thinking\n          </label>\n          <button class=\"btn-clear\" onclick=\"clearChat()\">Clear</button>\n        </div>\n      </div>\n      <div class=\"chat-messages\" id=\"chat-messages\">\n        <div class=\"chat-empty\" id=\"chat-empty\">\n          <div class=\"chat-empty-icon\">🤖</div>\n          <p>Click <strong>Analyze with AI</strong> to start chatting about your content</p>\n          <div class=\"tip-chips\">\n            <div class=\"tip\" onclick=\"sendTip(this)\">Summarize this</div>\n            <div class=\"tip\" onclick=\"sendTip(this)\">Key themes?</div>\n            <div class=\"tip\" onclick=\"sendTip(this)\">What's the sentiment?</div>\n            <div class=\"tip\" onclick=\"sendTip(this)\">Top comments</div>\n          </div>\n        </div>\n      </div>\n      <input type=\"file\" id=\"file-upload\" multiple accept=\"image/*,.pdf,.txt,.md,.csv\" style=\"display:none\" onchange=\"handleFiles(this)\"/>\n      <div class=\"chat-input-area\">\n        <div class=\"upload-preview\" id=\"upload-preview\"></div>\n        <div class=\"chat-row\">\n          <textarea class=\"chat-input\" id=\"chat-input\" rows=\"1\" placeholder=\"Ask about the content…\" onkeydown=\"handleKey(event)\" oninput=\"autoResize(this)\"></textarea>\n          <div class=\"chat-btns\">\n            <button class=\"btn-upload\" onclick=\"document.getElementById('file-upload').click()\" title=\"Attach image/file\">📎</button>\n            <button class=\"btn-send\" id=\"btn-send\" onclick=\"sendMessage()\">\n              <svg width=\"16\" height=\"16\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"#fff\" stroke-width=\"2\"><path d=\"M14 2L2 8l4 2 2 4 6-12z\"/></svg>\n            </button>\n          </div>\n        </div>\n      </div>\n    </div>\n  </div>\n</section>\n\n</div><!-- /container -->\n\n<script>\n// ── Config ────────────────────────────────────────────────────\nconst BACKEND = 'https://redstdui-ytbro-api.hf.space';\nconst AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';\n\n// ── State ─────────────────────────────────────────────────────\nlet state = {\n  videoId: '',\n  videoUrl: '',\n  currentTab: 'comments',\n  selectedLang: null,\n  result: null,\n  chatHistory: [],\n  uploadedFiles: [],\n  contextLoaded: false,\n  transSrc: 'url',         // 'url' or 'file'\n  audioFile: null,         // File object when transSrc === 'file'\n  whisperPipeline: null,   // cached transformers.js pipeline\n  whisperModelId: null,    // currently loaded model id\n};\n\n// ── Init ──────────────────────────────────────────────────────\ndocument.addEventListener('DOMContentLoaded', () => {\n  const saved = localStorage.getItem('groq_key');\n  if (saved) document.getElementById('groq-key').value = saved;\n\n  document.getElementById('url-input').addEventListener('keydown', e => {\n    if (e.key === 'Enter') analyzeUrl();\n  });\n});\n\n// ── URL analyze ───────────────────────────────────────────────\nasync function analyzeUrl() {\n  const url = document.getElementById('url-input').value.trim();\n  if (!url) return;\n\n  setHero(false);\n  show('video-info');\n  document.getElementById('vid-title').textContent = 'Loading…';\n\n  try {\n    const res = await fetch(`${BACKEND}/api/video/info`, {\n      method: 'POST',\n      headers: {'Content-Type': 'application/json'},\n      body: JSON.stringify({url}),\n    });\n    const data = await res.json();\n    if (data.error) { alert('Invalid YouTube URL'); return; }\n\n    state.videoId = data.video_id;\n    state.videoUrl = data.url;\n\n    document.getElementById('vid-thumb').src = data.thumbnail;\n    document.getElementById('vid-title').textContent = data.title;\n    document.getElementById('vid-id').textContent = data.video_id;\n\n    show('actions');\n    switchTab('comments');\n    hide('result');\n    hide('processing');\n  } catch (e) {\n    alert('Could not reach backend. Is the HF Space running?');\n  }\n}\n\n// ── Tab switching ─────────────────────────────────────────────\nfunction switchTab(tab) {\n  state.currentTab = tab;\n  ['comments','captions','transcribe'].forEach(t => {\n    document.getElementById(`tab-${t}`).classList.toggle('active', t === tab);\n    document.getElementById(`opt-${t}`).classList.toggle('hidden', t !== tab);\n  });\n}\n\n// ── Language check ────────────────────────────────────────────\nasync function checkLanguages() {\n  const btn = document.querySelector('.check-langs-btn');\n  btn.textContent = '⏳ Checking…';\n  btn.disabled = true;\n\n  try {\n    const res = await fetch(`${BACKEND}/api/captions/languages`, {\n      method: 'POST',\n      headers: {'Content-Type': 'application/json'},\n      body: JSON.stringify({url: state.videoUrl}),\n    });\n    const data = await res.json();\n    const list = document.getElementById('lang-list');\n    list.innerHTML = '';\n\n    [...(data.manual||[]).map(l => ({...l, type:'manual'})),\n     ...(data.auto||[]).map(l => ({...l, type:'auto'}))]\n      .forEach(lang => {\n        const div = document.createElement('div');\n        div.className = 'lang-item';\n        div.innerHTML = `${lang.name} <span class=\"lang-badge\">${lang.type}</span>`;\n        div.onclick = () => {\n          document.querySelectorAll('.lang-item').forEach(el => el.classList.remove('selected'));\n          div.classList.add('selected');\n          state.selectedLang = {code: lang.code, name: lang.name};\n        };\n        list.appendChild(div);\n      });\n\n    show('lang-list-wrap');\n    btn.textContent = '✅ Languages loaded';\n  } catch (e) {\n    btn.textContent = '❌ Failed — retry';\n    btn.disabled = false;\n  }\n}\n\n// ── Transcribe controls ───────────────────────────────────────\nfunction setSrc(src){\n  state.transSrc = src;\n  document.getElementById('src-url').classList.toggle('active', src==='url');\n  document.getElementById('src-file').classList.toggle('active', src==='file');\n  document.getElementById('src-file-section').classList.toggle('hidden', src!=='file');\n}\n\nfunction onAudioFile(input){\n  const f = input.files[0];\n  if(!f){ state.audioFile=null; document.getElementById('audio-file-info').textContent=''; return; }\n  state.audioFile = f;\n  const mb = (f.size/1048576).toFixed(1);\n  document.getElementById('audio-file-info').textContent = `📎 ${f.name} · ${mb} MB · ${f.type||'audio'}`;\n}\n\nfunction onEngineChange(){\n  const eng = document.getElementById('trans-engine').value;\n  const groqRow = document.getElementById('groq-key-row');\n  const modelLabel = document.getElementById('trans-model-label');\n  const modelSel = document.getElementById('trans-model');\n  if(eng === 'groq'){\n    groqRow.classList.remove('hidden');\n    modelLabel.textContent = 'Groq Model';\n    modelSel.innerHTML = `\n      <option value=\"whisper-large-v3\">whisper-large-v3 (best · 99 langs)</option>\n      <option value=\"whisper-large-v3-turbo\">whisper-large-v3-turbo (fast)</option>`;\n  } else {\n    groqRow.classList.add('hidden');\n    modelLabel.textContent = 'Browser Model';\n    modelSel.innerHTML = `\n      <option value=\"Xenova/whisper-tiny\">Tiny — fastest (~75MB)</option>\n      <option value=\"Xenova/whisper-base\" selected>Base — balanced (~150MB)</option>\n      <option value=\"Xenova/whisper-small\">Small — accurate (~480MB)</option>`;\n  }\n}\n\nasync function startTranscribe(){\n  const engine = document.getElementById('trans-engine').value;\n  const model  = document.getElementById('trans-model').value;\n  const src    = state.transSrc;\n\n  if(src === 'file' && !state.audioFile){\n    alert('Please choose an audio file to upload.');\n    return;\n  }\n  if(src === 'url' && !state.videoUrl){\n    alert('Please paste and analyze a YouTube URL first (top of page).');\n    return;\n  }\n\n  hide('actions'); show('processing'); hide('result');\n  state.result = null; state.chatHistory = []; state.contextLoaded = false;\n  const log = document.getElementById('log-box');\n  log.innerHTML = '';\n  document.getElementById('proc-title').textContent = '🎙️ Generating transcript…';\n\n  try {\n    if(engine === 'browser'){\n      await transcribeWithBrowserWhisper(model, src, log);\n    } else {\n      await transcribeWithGroq(model, src, log);\n    }\n    showResult('transcribe');\n  } catch(err){\n    addLog(log, '❌ ' + (err.message||err), 'err');\n    document.getElementById('proc-title').textContent = '❌ Transcription failed';\n    document.querySelector('.spinner').style.display='none';\n    show('actions');\n  }\n}\n\n// ── Browser Whisper (Transformers.js — free, unlimited, all langs) ─\nasync function transcribeWithBrowserWhisper(modelId, src, log){\n  addLog(log, 'Loading Transformers.js…');\n  // Lazy-load transformers.js from CDN\n  const tf = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');\n  tf.env.allowLocalModels = false;\n  tf.env.useBrowserCache = true;\n\n  // Get audio source as Blob\n  let blob;\n  if(src === 'file'){\n    blob = state.audioFile;\n    addLog(log, `Using uploaded file: ${state.audioFile.name}`);\n  } else {\n    addLog(log, 'YouTube URL transcription requires Audio File mode. Click \"Upload Audio File\" above and use one of the YouTube extractors.');\n    throw new Error('Browser Whisper needs an audio file. Use Upload Audio File mode.');\n  }\n\n  // Decode audio to mono Float32Array @ 16kHz (Whisper's required input)\n  addLog(log, 'Decoding audio…');\n  const arrayBuf = await blob.arrayBuffer();\n  const audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate: 16000});\n  let decoded;\n  try {\n    decoded = await audioCtx.decodeAudioData(arrayBuf);\n  } catch(e){\n    throw new Error('Could not decode audio. Try MP3, WAV, M4A, or OGG.');\n  }\n  // Mix down to mono\n  let mono;\n  if(decoded.numberOfChannels === 1){\n    mono = decoded.getChannelData(0);\n  } else {\n    const a = decoded.getChannelData(0), b = decoded.getChannelData(1);\n    mono = new Float32Array(a.length);\n    for(let i=0;i<a.length;i++) mono[i] = (a[i]+b[i])/2;\n  }\n  const durSec = mono.length / 16000;\n  addLog(log, `Audio: ${Math.floor(durSec/60)}m${Math.floor(durSec%60)}s · 16kHz mono`);\n\n  // Load model (cached after first run via browser cache)\n  if(state.whisperModelId !== modelId){\n    addLog(log, `Loading model ${modelId} (first run downloads model, then cached)…`);\n    state.whisperPipeline = await tf.pipeline('automatic-speech-recognition', modelId, {\n      progress_callback: (p)=>{\n        if(p.status === 'progress' && p.progress){\n          const pct = p.progress.toFixed(0);\n          // Replace last progress line\n          const lines = log.querySelectorAll('.log-line');\n          const last = lines[lines.length-1];\n          if(last && last.dataset.kind==='progress'){\n            last.textContent = `> Downloading ${p.file||'model'}: ${pct}%`;\n          } else {\n            const d = document.createElement('div');\n            d.className='log-line'; d.dataset.kind='progress';\n            d.textContent = `> Downloading ${p.file||'model'}: ${pct}%`;\n            log.appendChild(d); log.scrollTop = log.scrollHeight;\n          }\n        }\n      },\n    });\n    state.whisperModelId = modelId;\n    addLog(log, 'Model loaded ✓', 'ok');\n  }\n\n  // Run transcription with chunking (auto language detection)\n  addLog(log, 'Transcribing… this may take a while for long audio');\n  const result = await state.whisperPipeline(mono, {\n    return_timestamps: true,\n    chunk_length_s: 30,\n    stride_length_s: 5,\n  });\n\n  const text = result.text || '';\n  const lang = result.language || 'auto';\n  const wordCount = text.split(/\\s+/).filter(Boolean).length;\n\n  // Build markdown\n  const title = (src==='file') ? state.audioFile.name.replace(/\\.[^.]+$/, '') : (document.getElementById('vid-title').textContent || 'Audio');\n  let md = `# Transcript: ${title}\\n\\n`;\n  md += `- **Engine:** Browser Whisper (${modelId})\\n`;\n  md += `- **Language:** ${lang}\\n`;\n  md += `- **Words:** ${wordCount.toLocaleString()}\\n`;\n  md += `- **Duration:** ${Math.floor(durSec/60)}m${Math.floor(durSec%60)}s\\n\\n---\\n\\n`;\n  if(result.chunks && result.chunks.length){\n    for(const c of result.chunks){\n      const t = c.timestamp && c.timestamp[0] != null ? formatTs(c.timestamp[0]) : '';\n      md += t ? `**[${t}]** ${c.text.trim()}\\n\\n` : `${c.text.trim()}\\n\\n`;\n    }\n  } else {\n    md += text;\n  }\n\n  state.result = {\n    type: 'result',\n    content: md,\n    title,\n    filename: `transcript_${title.replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)}.md`,\n    stats: { words: wordCount, language: lang, duration: `${Math.floor(durSec/60)}m${Math.floor(durSec%60)}s` },\n  };\n  addLog(log, `Done! ${wordCount.toLocaleString()} words · language: ${lang}`, 'ok');\n}\n\nfunction formatTs(s){\n  s = Math.floor(s||0);\n  const m = Math.floor(s/60), ss = String(s%60).padStart(2,'0');\n  return `${String(m).padStart(2,'0')}:${ss}`;\n}\n\n// ── Groq cloud transcription (file upload OR YouTube URL) ─\nasync function transcribeWithGroq(model, src, log){\n  const apiKey = document.getElementById('groq-key').value.trim();\n  if(!apiKey){ throw new Error('Enter a Groq API key.'); }\n\n  if(src === 'file'){\n    addLog(log, `Uploading ${state.audioFile.name} to Groq via backend…`);\n    const form = new FormData();\n    form.append('file', state.audioFile);\n    form.append('api_key', apiKey);\n    form.append('model', model);\n    const res = await fetch(`${BACKEND}/api/transcribe/file`, { method: 'POST', body: form });\n    if(!res.ok){\n      const errText = await res.text();\n      throw new Error(`Groq upload failed: ${errText.substring(0,200)}`);\n    }\n    // Backend returns SSE-formatted progress + final result (same format as YouTube transcribe)\n    await readSSE(res, log);\n  } else {\n    // YouTube URL → existing endpoint\n    addLog(log, 'Sending YouTube URL to Groq via backend…');\n    const res = await fetch(`${BACKEND}/api/transcribe`, {\n      method: 'POST', headers: {'Content-Type':'application/json'},\n      body: JSON.stringify({ url: state.videoUrl, api_key: apiKey, model }),\n    });\n    await readSSE(res, log);\n  }\n}\n\nasync function readSSE(res, log){\n  const reader = res.body.getReader();\n  const decoder = new TextDecoder();\n  let buf = '';\n  while(true){\n    const {done, value} = await reader.read();\n    if(done) break;\n    buf += decoder.decode(value, {stream:true});\n    const lines = buf.split('\\n');\n    buf = lines.pop();\n    for(const line of lines){\n      if(!line.startsWith('data: ')) continue;\n      try {\n        const evt = JSON.parse(line.slice(6));\n        if(evt.type==='progress') addLog(log, evt.message);\n        else if(evt.type==='result'){ state.result = evt; addLog(log, '✅ Done!', 'ok'); }\n        else if(evt.type==='error'){ addLog(log, '❌ ' + evt.message, 'err'); throw new Error(evt.message); }\n        else if(evt.type==='done') return;\n      } catch(e){ if(e.message) throw e; }\n    }\n  }\n}\n\n// ── Start download / generation ───────────────────────────────\nasync function startDownload(type) {\n  hide('actions');\n  show('processing');\n  hide('result');\n  state.result = null;\n  state.chatHistory = [];\n  state.contextLoaded = false;\n\n  const log = document.getElementById('log-box');\n  log.innerHTML = '';\n\n  const titles = {\n    comments: '💬 Downloading comments…',\n    captions: '📝 Downloading captions…',\n    transcribe: '🎙️ Generating AI transcript…',\n  };\n  document.getElementById('proc-title').textContent = titles[type];\n\n  let endpoint, body;\n\n  if (type === 'comments') {\n    endpoint = '/api/comments';\n    body = {\n      url: state.videoUrl,\n      sort: document.getElementById('sort-mode').value,\n      max_comments: parseInt(document.getElementById('max-comments').value) || 0,\n    };\n  } else if (type === 'captions') {\n    if (!state.selectedLang) { alert('Please select a language first.'); show('actions'); hide('processing'); return; }\n    endpoint = '/api/captions/download';\n    body = {url: state.videoUrl, lang_code: state.selectedLang.code, lang_name: state.selectedLang.name};\n  } else {\n    const key = document.getElementById('groq-key').value.trim();\n    if (!key) { alert('Enter your Groq API key first.'); show('actions'); hide('processing'); return; }\n    endpoint = '/api/transcribe';\n    body = {\n      url: state.videoUrl,\n      api_key: key,\n      model: document.getElementById('groq-model').value,\n    };\n  }\n\n  try {\n    const res = await fetch(`${BACKEND}${endpoint}`, {\n      method: 'POST',\n      headers: {'Content-Type': 'application/json'},\n      body: JSON.stringify(body),\n    });\n\n    const reader = res.body.getReader();\n    const decoder = new TextDecoder();\n    let buf = '';\n\n    while (true) {\n      const {done, value} = await reader.read();\n      if (done) break;\n      buf += decoder.decode(value, {stream: true});\n      const lines = buf.split('\\n');\n      buf = lines.pop();\n      for (const line of lines) {\n        if (!line.startsWith('data: ')) continue;\n        try {\n          const evt = JSON.parse(line.slice(6));\n          if (evt.type === 'progress') {\n            addLog(log, evt.message);\n          } else if (evt.type === 'result') {\n            state.result = evt;\n            addLog(log, '✅ Done!', 'ok');\n          } else if (evt.type === 'error') {\n            addLog(log, '❌ ' + evt.message, 'err');\n            state.lastError = evt.message;\n          } else if (evt.type === 'done') {\n            showResult(type);\n            return;\n          }\n        } catch {}\n      }\n    }\n    showResult(type);\n  } catch (err) {\n    addLog(log, '❌ Error: ' + err.message, 'err');\n  }\n}\n\nfunction addLog(box, msg, cls='') {\n  const div = document.createElement('div');\n  div.className = 'log-line' + (cls ? ' ' + cls : '');\n  div.textContent = '> ' + msg;\n  box.appendChild(div);\n  box.scrollTop = box.scrollHeight;\n}\n\n// ── Show result ───────────────────────────────────────────────\nfunction showResult(type) {\n  if (!state.result) {\n    // Download failed — stay on processing panel so user sees the error log\n    document.getElementById('proc-title').textContent = '❌ Download failed — see error above';\n    document.querySelector('.spinner').style.display = 'none';\n    show('actions');\n    return;\n  }\n  hide('processing');\n  show('result');\n\n  const icons = {comments:'💬', captions:'📝', transcribe:'🎙️'};\n  const labels = {comments:'Comments', captions:'Captions', transcribe:'Transcript'};\n  document.getElementById('result-icon').textContent = icons[type];\n  document.getElementById('result-label').textContent = labels[type];\n\n  // Stats\n  const s = state.result.stats || {};\n  let statHtml = '';\n  if (s.total) statHtml += `<span class=\"stat\"><span class=\"stat-val\">${s.total.toLocaleString()}</span><span class=\"stat-lbl\"> comments</span></span>`;\n  if (s.words) statHtml += `<span class=\"stat\"><span class=\"stat-val\">${s.words.toLocaleString()}</span><span class=\"stat-lbl\"> words</span></span>`;\n  if (s.duration) statHtml += `<span class=\"stat\"><span class=\"stat-val\">${s.duration}</span><span class=\"stat-lbl\"> duration</span></span>`;\n  if (s.language) statHtml += `<span class=\"stat\"><span class=\"stat-val\">${s.language}</span><span class=\"stat-lbl\"> lang</span></span>`;\n  document.getElementById('result-stats').innerHTML = statHtml;\n\n  // Preview\n  document.getElementById('content-preview').textContent =\n    (state.result.content || '').substring(0, 1500) + (state.result.content?.length > 1500 ? '\\n…' : '');\n\n  // AI link\n  if (state.result.ai_url) {\n    document.getElementById('ai-link-url').textContent = state.result.ai_url;\n    show('ai-link-box');\n  }\n\n  // Download button\n  const blob = new Blob([state.result.content || ''], {type: 'text/markdown'});\n  const dl = document.getElementById('btn-download');\n  dl.href = URL.createObjectURL(blob);\n  dl.download = state.result.filename || 'content.md';\n}\n\n// ── Open chat ─────────────────────────────────────────────────\nfunction openChat() {\n  if (!state.result || state.contextLoaded) return;\n  state.contextLoaded = true;\n\n  const title = state.result.title || 'this YouTube video';\n  const content = (state.result.content || '').substring(0, 15000);\n\n  // Add content as system context (first user message, silently)\n  state.chatHistory = [\n    {\n      role: 'system',\n      content: `You are an AI assistant analyzing YouTube content.\\nVideo title: \"${title}\"\\nHere is the downloaded content:\\n\\n${content}\\n\\nHelp the user understand, summarize, and analyze this content. Be direct and insightful.`,\n    }\n  ];\n\n  const msgs = document.getElementById('chat-messages');\n  const empty = document.getElementById('chat-empty');\n  if (empty) empty.remove();\n\n  appendMsg('assistant',\n    `I've loaded the content from **\"${title}\"**.\\n\\nAsk me anything — I can summarize, find patterns, answer specific questions, or analyze sentiment.`);\n\n  document.getElementById('chat-input').focus();\n}\n\n// ── Send tip ──────────────────────────────────────────────────\nfunction sendTip(el) {\n  openChat();\n  document.getElementById('chat-input').value = el.textContent;\n  sendMessage();\n}\n\n// ── Send message ──────────────────────────────────────────────\nasync function sendMessage() {\n  const input = document.getElementById('chat-input');\n  const text = input.value.trim();\n  if (!text && state.uploadedFiles.length === 0) return;\n\n  if (!state.contextLoaded) openChat();\n\n  const btn = document.getElementById('btn-send');\n  btn.disabled = true;\n  input.value = '';\n  input.style.height = 'auto';\n\n  // Build content array for multimodal\n  let content;\n  if (state.uploadedFiles.length > 0) {\n    content = [{type: 'text', text}];\n    state.uploadedFiles.forEach(f => {\n      if (f.dataUri.startsWith('data:image')) {\n        content.push({type: 'image_url', image_url: {url: f.dataUri}});\n      }\n    });\n  } else {\n    content = text;\n  }\n\n  appendMsg('user', text, state.uploadedFiles.map(f => f.name));\n  state.uploadedFiles = [];\n  document.getElementById('upload-preview').innerHTML = '';\n\n  state.chatHistory.push({role: 'user', content});\n\n  const model = document.getElementById('chat-model').value;\n  const thinking = document.getElementById('thinking-toggle').checked;\n\n  // Show typing indicator\n  const typingId = 'typing-' + Date.now();\n  appendTyping(typingId);\n\n  try {\n    const res = await fetch(AI_API, {\n      method: 'POST',\n      headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},\n      body: JSON.stringify({\n        model,\n        thinking,\n        messages: state.chatHistory,\n        stream: true,\n      }),\n    });\n\n    if (!res.ok) {\n      removeTyping(typingId);\n      appendMsg('assistant', `❌ Server returned ${res.status}. Try again or pick a different model.`);\n      btn.disabled = false; return;\n    }\n\n    // Replace typing indicator with a streaming bubble\n    removeTyping(typingId);\n    const msgs = document.getElementById('chat-messages');\n    const wrap = document.createElement('div');\n    wrap.className = 'msg assistant';\n    const bubble = document.createElement('div');\n    bubble.className = 'msg-bubble';\n    bubble.innerHTML = '<span class=\"typing-dots\"><span></span><span></span><span></span></span>';\n    const meta = document.createElement('div');\n    meta.className = 'msg-meta';\n    meta.textContent = model;\n    wrap.appendChild(bubble); wrap.appendChild(meta); msgs.appendChild(wrap);\n    msgs.scrollTop = msgs.scrollHeight;\n\n    let acc = '';\n    const ct = (res.headers.get('Content-Type')||'').toLowerCase();\n    if (ct.includes('event-stream') || ct.includes('text/plain')) {\n      // SSE streaming path\n      const reader = res.body.getReader();\n      const dec = new TextDecoder();\n      let buf = '';\n      while (true) {\n        const {done, value} = await reader.read();\n        if (done) break;\n        buf += dec.decode(value, {stream:true});\n        const lines = buf.split('\\n');\n        buf = lines.pop();\n        for (const line of lines) {\n          if (!line.startsWith('data:')) continue;\n          const data = line.slice(5).trim();\n          if (!data || data === '[DONE]') continue;\n          try {\n            const j = JSON.parse(data);\n            const delta = j.choices?.[0]?.delta?.content\n                       || j.choices?.[0]?.message?.content\n                       || j.delta || j.content || '';\n            if (delta) {\n              acc += delta;\n              bubble.innerHTML = marked.parse(acc);\n              msgs.scrollTop = msgs.scrollHeight;\n            }\n          } catch {}\n        }\n      }\n    } else {\n      // Non-streaming JSON fallback\n      const data = await res.json();\n      acc = data.choices?.[0]?.message?.content || data.content || '(No response)';\n      bubble.innerHTML = marked.parse(acc);\n    }\n\n    if (!acc.trim()) bubble.textContent = '(No response — try again or switch model)';\n    state.chatHistory.push({role:'assistant', content: acc});\n  } catch (err) {\n    removeTyping(typingId);\n    appendMsg('assistant', `❌ Error: ${err.message}`);\n  }\n\n  btn.disabled = false;\n  document.getElementById('chat-input').focus();\n}\n\nfunction appendMsg(role, text, fileNames=[]) {\n  const msgs = document.getElementById('chat-messages');\n  const empty = document.getElementById('chat-empty');\n  if (empty) empty.remove();\n\n  const wrap = document.createElement('div');\n  wrap.className = `msg ${role}`;\n\n  const bubble = document.createElement('div');\n  bubble.className = 'msg-bubble';\n\n  if (role === 'assistant') {\n    bubble.innerHTML = marked.parse(text);\n  } else {\n    bubble.textContent = text;\n    if (fileNames.length) {\n      fileNames.forEach(n => {\n        const chip = document.createElement('div');\n        chip.style.cssText = 'font-size:.72rem;opacity:.7;margin-top:.3rem';\n        chip.textContent = '📎 ' + n;\n        bubble.appendChild(chip);\n      });\n    }\n  }\n\n  const meta = document.createElement('div');\n  meta.className = 'msg-meta';\n  meta.textContent = role === 'user' ? 'You' : document.getElementById('chat-model').value;\n\n  wrap.appendChild(bubble);\n  wrap.appendChild(meta);\n  msgs.appendChild(wrap);\n  msgs.scrollTop = msgs.scrollHeight;\n}\n\nfunction appendTyping(id) {\n  const msgs = document.getElementById('chat-messages');\n  const div = document.createElement('div');\n  div.id = id;\n  div.className = 'msg assistant';\n  div.innerHTML = `<div class=\"msg-bubble typing-dots\"><span></span><span></span><span></span></div>`;\n  msgs.appendChild(div);\n  msgs.scrollTop = msgs.scrollHeight;\n}\n\nfunction removeTyping(id) {\n  const el = document.getElementById(id);\n  if (el) el.remove();\n}\n\n// ── File upload ───────────────────────────────────────────────\nfunction handleFiles(input) {\n  const preview = document.getElementById('upload-preview');\n  Array.from(input.files).forEach(file => {\n    const reader = new FileReader();\n    reader.onload = e => {\n      state.uploadedFiles.push({name: file.name, dataUri: e.target.result});\n      const chip = document.createElement('div');\n      chip.className = 'upload-chip';\n      chip.innerHTML = `📎 ${file.name} <button onclick=\"removeFile('${file.name}',this.parentElement)\">×</button>`;\n      preview.appendChild(chip);\n    };\n    reader.readAsDataURL(file);\n  });\n  input.value = '';\n}\n\nfunction removeFile(name, el) {\n  state.uploadedFiles = state.uploadedFiles.filter(f => f.name !== name);\n  el.remove();\n}\n\n// ── Helpers ───────────────────────────────────────────────────\nfunction clearChat() {\n  state.chatHistory = [];\n  state.contextLoaded = false;\n  document.getElementById('chat-messages').innerHTML =\n    `<div class=\"chat-empty\" id=\"chat-empty\">\n      <div class=\"chat-empty-icon\">🤖</div>\n      <p>Click <strong>Analyze with AI</strong> to start chatting about your content</p>\n      <div class=\"tip-chips\">\n        <div class=\"tip\" onclick=\"sendTip(this)\">Summarize this</div>\n        <div class=\"tip\" onclick=\"sendTip(this)\">Key themes?</div>\n        <div class=\"tip\" onclick=\"sendTip(this)\">What's the sentiment?</div>\n        <div class=\"tip\" onclick=\"sendTip(this)\">Top comments</div>\n      </div>\n    </div>`;\n}\n\nfunction handleKey(e) {\n  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }\n}\n\nfunction autoResize(el) {\n  el.style.height = 'auto';\n  el.style.height = Math.min(el.scrollHeight, 120) + 'px';\n}\n\nfunction saveGroqKey(val) { localStorage.setItem('groq_key', val); }\n\nfunction copyAiLink() {\n  navigator.clipboard.writeText(document.getElementById('ai-link-url').textContent);\n  document.querySelector('.copy-btn').textContent = 'Copied!';\n  setTimeout(() => document.querySelector('.copy-btn').textContent = 'Copy', 2000);\n}\n\nfunction show(id) { document.getElementById(id).classList.remove('hidden'); }\nfunction hide(id) { document.getElementById(id).classList.add('hidden'); }\nfunction setHero(visible) {\n  const el = document.getElementById('hero');\n  el.style.paddingTop = visible ? '4rem' : '1.5rem';\n  el.querySelector('.hero-eyebrow').style.display = visible ? '' : 'none';\n  el.querySelector('.hero-title').style.display = visible ? '' : 'none';\n  el.querySelector('.hero-sub').style.display = visible ? '' : 'none';\n  el.querySelector('.pills').style.display = visible ? '' : 'none';\n}\n</script>\n</body>\n</html>\n";
+
+const HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ytbro — Analyze YouTube with AI</title>
+<meta name="description" content="Free tool to download YouTube comments, captions and AI transcripts. Chat with Claude, GPT, Gemini about any video."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#050510;
+  --bg-2:#0a0a18;
+  --surface:#0e0e1f;
+  --surface-2:#14142b;
+  --surface-3:#1a1a38;
+  --surface-4:#222247;
+  --border:rgba(124,58,237,.18);
+  --border-2:rgba(255,255,255,.06);
+  --border-3:rgba(255,255,255,.12);
+  --a1:#7c3aed;
+  --a2:#ec4899;
+  --a3:#06b6d4;
+  --grad:linear-gradient(135deg,#7c3aed 0%,#ec4899 100%);
+  --grad-soft:linear-gradient(135deg,rgba(124,58,237,.15) 0%,rgba(236,72,153,.15) 100%);
+  --grad-mesh:radial-gradient(ellipse at top left,rgba(124,58,237,.15),transparent 50%),radial-gradient(ellipse at bottom right,rgba(236,72,153,.12),transparent 50%);
+  --text:#e8e8f0;
+  --text-2:#b4b4c4;
+  --muted:#7d7d95;
+  --muted-2:#525268;
+  --success:#10b981;
+  --error:#ef4444;
+  --warn:#f59e0b;
+  --info:#06b6d4;
+  --r:16px;
+  --r-2:12px;
+  --r-3:8px;
+  --r-4:6px;
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 0 0 1px rgba(255,255,255,.04), 0 8px 24px rgba(0,0,0,.4);
+  --shadow-lift:0 1px 0 rgba(255,255,255,.06) inset, 0 0 0 1px rgba(124,58,237,.3), 0 12px 32px rgba(124,58,237,.18);
+  --ease:cubic-bezier(.4,0,.2,1);
+  --ease-bounce:cubic-bezier(.34,1.56,.64,1);
+}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  background:var(--bg);
+  background-image:var(--grad-mesh);
+  background-attachment:fixed;
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+  font-feature-settings:'cv11','ss01';
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--surface-3);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--surface-4)}
+::selection{background:rgba(124,58,237,.35);color:#fff}
+
+/* ── Nav ─────────────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:50;
+  background:rgba(5,5,16,.7);
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border-bottom:1px solid var(--border-2);
+  padding:.85rem 1.5rem;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.logo{
+  font-size:1.4rem;font-weight:800;letter-spacing:-.03em;
+  background:var(--grad);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  display:flex;align-items:center;gap:.4rem;
+}
+.logo-dot{width:6px;height:6px;background:var(--grad);border-radius:50%;animation:pulse 2s var(--ease) infinite}
+@keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.3);opacity:.6}}
+.logo span{font-weight:300;opacity:.7}
+.nav-right{display:flex;align-items:center;gap:.7rem}
+.nav-badge{
+  font-size:.72rem;font-weight:600;
+  background:rgba(124,58,237,.1);
+  color:var(--a1);
+  border:1px solid rgba(124,58,237,.25);
+  padding:.3rem .65rem;border-radius:20px;
+}
+.nav-badge::before{content:'●';margin-right:.35rem;color:var(--success);font-size:.7em}
+
+/* ── Layout ──────────────────────────────────────────── */
+.container{max-width:1080px;margin:0 auto;padding:0 1.25rem}
+.hidden{display:none!important}
+
+/* ── Hero ────────────────────────────────────────────── */
+#hero{padding:5rem 0 3rem;text-align:center;position:relative}
+.hero-eyebrow{
+  display:inline-flex;align-items:center;gap:.5rem;
+  font-size:.75rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--a1);margin-bottom:1.25rem;
+  background:rgba(124,58,237,.08);
+  border:1px solid rgba(124,58,237,.2);
+  padding:.4rem .9rem;border-radius:20px;
+}
+.hero-eyebrow .dot{width:5px;height:5px;background:var(--a1);border-radius:50%;box-shadow:0 0 12px var(--a1);animation:pulse 1.6s var(--ease) infinite}
+.hero-title{
+  font-size:clamp(2.2rem,5.8vw,3.8rem);
+  font-weight:800;line-height:1.05;letter-spacing:-.04em;
+  margin-bottom:1rem;
+}
+.hero-title .grad{
+  background:var(--grad);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-size:200% auto;animation:shimmer 8s linear infinite;
+}
+@keyframes shimmer{to{background-position:200% center}}
+.hero-sub{
+  color:var(--muted);font-size:1.08rem;line-height:1.6;
+  max-width:540px;margin:0 auto 2.5rem;
+}
+
+/* ── URL input ───────────────────────────────────────── */
+.url-box{
+  display:flex;gap:.5rem;
+  max-width:680px;margin:0 auto;
+  background:var(--surface);
+  border:1.5px solid var(--border);
+  border-radius:var(--r);
+  padding:.5rem .5rem .5rem 1rem;
+  box-shadow:var(--shadow);
+  transition:all .25s var(--ease);
+}
+.url-box:hover{border-color:rgba(124,58,237,.4)}
+.url-box:focus-within{border-color:var(--a1);box-shadow:var(--shadow-lift)}
+.url-box .icon{display:flex;align-items:center;color:var(--muted);flex-shrink:0}
+.url-box input{
+  flex:1;background:none;border:none;outline:none;
+  color:var(--text);font-size:1rem;font-family:inherit;
+  padding:.7rem .25rem;min-width:0;
+}
+.url-box input::placeholder{color:var(--muted-2)}
+.btn-go{
+  position:relative;overflow:hidden;
+  background:var(--grad);color:#fff;border:none;
+  border-radius:var(--r-2);
+  padding:.7rem 1.5rem;font-weight:700;font-size:.93rem;
+  cursor:pointer;white-space:nowrap;
+  transition:transform .15s var(--ease), box-shadow .25s var(--ease);
+  display:flex;align-items:center;gap:.45rem;
+  box-shadow:0 4px 16px rgba(124,58,237,.4), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.btn-go:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.55), 0 1px 0 rgba(255,255,255,.2) inset}
+.btn-go:active{transform:translateY(0)}
+.btn-go svg{width:14px;height:14px;transition:transform .25s var(--ease)}
+.btn-go:hover svg{transform:translateX(2px)}
+
+/* ── Pills ───────────────────────────────────────────── */
+.pills{display:flex;justify-content:center;gap:.5rem;flex-wrap:wrap;margin-top:2rem}
+.pill{
+  display:inline-flex;align-items:center;gap:.4rem;
+  background:var(--surface);border:1px solid var(--border-2);
+  border-radius:24px;padding:.45rem 1rem;
+  font-size:.78rem;color:var(--text-2);font-weight:500;
+  transition:all .2s var(--ease);
+}
+.pill:hover{border-color:var(--border-3);color:var(--text);transform:translateY(-1px)}
+.pill .ico{font-size:1rem}
+
+/* ── Video info ──────────────────────────────────────── */
+#video-info{padding:1.5rem 0 .5rem;animation:slideUp .4s var(--ease)}
+@keyframes slideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.video-card{
+  display:flex;gap:1rem;align-items:center;
+  background:var(--surface);border:1px solid var(--border-2);
+  border-radius:var(--r);padding:.85rem 1rem;
+  box-shadow:var(--shadow);
+}
+.video-thumb{
+  width:100px;height:56px;border-radius:var(--r-3);
+  object-fit:cover;flex-shrink:0;background:var(--surface-2);
+  position:relative;
+}
+.video-meta{flex:1;min-width:0}
+.video-meta h3{
+  font-size:.95rem;font-weight:600;line-height:1.35;
+  margin-bottom:.3rem;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+  -webkit-line-clamp:2;-webkit-box-orient:vertical;
+}
+.video-id{
+  font-size:.72rem;color:var(--muted);
+  font-family:'JetBrains Mono',monospace;
+  background:var(--surface-2);padding:.2rem .5rem;
+  border-radius:4px;display:inline-block;
+  border:1px solid var(--border-2);
+}
+
+/* ── Tabs ────────────────────────────────────────────── */
+#actions{padding:.5rem 0 1.5rem;animation:slideUp .4s var(--ease) .05s both}
+.tabs{
+  display:flex;gap:.3rem;
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-2);
+  padding:.3rem;margin-bottom:1.2rem;
+  box-shadow:var(--shadow);
+}
+.tab{
+  flex:1;display:flex;align-items:center;justify-content:center;gap:.45rem;
+  padding:.7rem 1rem;border:none;background:transparent;
+  border-radius:var(--r-3);
+  cursor:pointer;font-weight:600;font-size:.88rem;
+  color:var(--muted);font-family:inherit;
+  transition:all .2s var(--ease);
+  position:relative;
+}
+.tab:hover{color:var(--text);background:rgba(255,255,255,.03)}
+.tab.active{
+  color:#fff;
+  background:var(--grad);
+  box-shadow:0 4px 12px rgba(124,58,237,.35), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.tab-icon{font-size:1rem}
+
+/* ── Options panel ───────────────────────────────────── */
+.options-panel{
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  border-radius:var(--r);padding:1.4rem;
+  box-shadow:var(--shadow);
+  animation:fadeIn .3s var(--ease);
+}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+.opt-row{display:grid;grid-template-columns:1fr 1fr;gap:.85rem;margin-bottom:1rem}
+.opt-row:last-of-type{margin-bottom:0}
+.opt-group label{
+  display:block;font-size:.7rem;font-weight:700;
+  color:var(--muted);margin-bottom:.45rem;
+  text-transform:uppercase;letter-spacing:.08em;
+}
+.opt-group select,
+.opt-group input[type=number],
+.opt-group input[type=text],
+.opt-group input[type=password]{
+  width:100%;background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);padding:.65rem .8rem;
+  color:var(--text);font-size:.9rem;font-family:inherit;
+  outline:none;transition:all .2s var(--ease);
+}
+.opt-group select:focus,
+.opt-group input:focus{
+  border-color:var(--a1);
+  box-shadow:0 0 0 3px rgba(124,58,237,.15);
+  background:var(--surface-3);
+}
+.opt-group select{
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237d7d95' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  background-repeat:no-repeat;background-position:right .7rem center;
+  background-size:14px;padding-right:2rem;
+}
+.opt-group select option{background:var(--surface-2);color:var(--text)}
+
+/* ── Source toggle ───────────────────────────────────── */
+.src-toggle{
+  display:flex;gap:.3rem;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);padding:.3rem;
+}
+.src-btn{
+  flex:1;background:transparent;border:none;
+  color:var(--muted);padding:.6rem .8rem;
+  border-radius:var(--r-4);
+  font-weight:600;font-size:.85rem;cursor:pointer;
+  font-family:inherit;
+  transition:all .2s var(--ease);
+}
+.src-btn:hover{color:var(--text)}
+.src-btn.active{background:var(--grad);color:#fff;box-shadow:0 2px 8px rgba(124,58,237,.4)}
+
+/* ── File input ──────────────────────────────────────── */
+#audio-file{
+  display:block;width:100%;
+  padding:.85rem;
+  background:var(--surface-2);
+  border:1.5px dashed rgba(124,58,237,.3);
+  border-radius:var(--r-3);
+  color:var(--text);font-family:inherit;font-size:.85rem;
+  cursor:pointer;transition:all .2s var(--ease);
+}
+#audio-file:hover{border-color:var(--a1);background:var(--surface-3)}
+#audio-file::file-selector-button{
+  background:var(--grad);color:#fff;border:none;
+  border-radius:var(--r-4);padding:.45rem .85rem;
+  cursor:pointer;font-weight:600;margin-right:.7rem;
+  font-family:inherit;font-size:.82rem;
+  transition:transform .15s var(--ease);
+}
+#audio-file::file-selector-button:hover{transform:translateY(-1px)}
+
+/* ── YouTube helper ──────────────────────────────────── */
+.yt-helper{
+  margin:.6rem 0 1rem;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);padding:.7rem .9rem;
+}
+.yt-helper summary{
+  cursor:pointer;color:var(--a1);
+  font-size:.85rem;font-weight:600;outline:none;
+  display:flex;align-items:center;gap:.4rem;
+  list-style:none;
+}
+.yt-helper summary::-webkit-details-marker{display:none}
+.yt-helper summary::before{content:'▸';transition:transform .2s var(--ease);font-size:.7em}
+.yt-helper[open] summary::before{transform:rotate(90deg)}
+.yt-helper summary:hover{opacity:.8}
+.yt-helper-body{padding:.7rem 0 .2rem}
+.yt-helper-body p{
+  font-size:.82rem;color:var(--muted);
+  margin-bottom:.6rem;line-height:1.5;
+}
+.yt-tool{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:.6rem .85rem;
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-4);
+  margin-bottom:.4rem;
+  text-decoration:none;color:var(--text);
+  font-size:.85rem;font-weight:500;
+  transition:all .2s var(--ease);
+}
+.yt-tool:hover{
+  border-color:var(--a1);transform:translateX(3px);
+  background:rgba(124,58,237,.05);
+}
+.yt-tool span{font-size:.72rem;color:var(--muted);font-weight:400}
+
+/* ── Buttons ─────────────────────────────────────────── */
+.btn-main{
+  display:flex;align-items:center;justify-content:center;gap:.5rem;
+  width:100%;padding:.95rem;
+  background:var(--grad);color:#fff;border:none;
+  border-radius:var(--r-3);
+  font-weight:700;font-size:.95rem;
+  cursor:pointer;font-family:inherit;
+  transition:transform .15s var(--ease), box-shadow .25s var(--ease);
+  box-shadow:0 4px 16px rgba(124,58,237,.35), 0 1px 0 rgba(255,255,255,.15) inset;
+  margin-top:.7rem;
+  letter-spacing:-.005em;
+}
+.btn-main:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 24px rgba(124,58,237,.5), 0 1px 0 rgba(255,255,255,.2) inset}
+.btn-main:active:not(:disabled){transform:translateY(0)}
+.btn-main:disabled{opacity:.5;cursor:not-allowed}
+.btn-secondary{
+  display:inline-flex;align-items:center;gap:.4rem;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  color:var(--text);
+  border-radius:var(--r-3);
+  padding:.6rem 1rem;
+  font-weight:600;font-size:.85rem;
+  cursor:pointer;font-family:inherit;text-decoration:none;
+  transition:all .2s var(--ease);
+}
+.btn-secondary:hover{border-color:var(--a1);background:rgba(124,58,237,.08)}
+
+.check-langs-btn{
+  background:var(--surface-2);
+  border:1px solid var(--border);
+  color:var(--text);border-radius:var(--r-3);
+  padding:.65rem 1rem;font-size:.85rem;font-weight:600;
+  cursor:pointer;width:100%;
+  transition:all .2s var(--ease);margin-bottom:.7rem;
+  display:flex;align-items:center;justify-content:center;gap:.45rem;
+  font-family:inherit;
+}
+.check-langs-btn:hover{background:rgba(124,58,237,.08);border-color:var(--a1)}
+.check-langs-btn:disabled{opacity:.6;cursor:wait}
+
+/* ── Language list ──────────────────────────────────── */
+.lang-list{
+  max-height:180px;overflow-y:auto;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);
+  margin-top:.4rem;
+}
+.lang-item{
+  padding:.55rem .85rem;cursor:pointer;
+  font-size:.88rem;
+  display:flex;justify-content:space-between;align-items:center;
+  transition:background .15s var(--ease);
+  border-bottom:1px solid var(--border-2);
+}
+.lang-item:last-child{border-bottom:none}
+.lang-item:hover{background:rgba(124,58,237,.08)}
+.lang-item.selected{background:rgba(124,58,237,.15);color:var(--a1);font-weight:600}
+.lang-badge{
+  font-size:.7rem;background:var(--surface);color:var(--muted);
+  padding:.15rem .5rem;border-radius:4px;
+  border:1px solid var(--border-2);font-weight:500;
+}
+
+/* ── Processing ──────────────────────────────────────── */
+#processing{padding:1.5rem 0;animation:slideUp .35s var(--ease)}
+.proc-card{
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  border-radius:var(--r);padding:1.5rem;
+  box-shadow:var(--shadow);
+}
+.proc-header{display:flex;align-items:center;gap:.75rem;margin-bottom:1rem}
+.spinner{
+  width:22px;height:22px;
+  border:2.5px solid var(--surface-3);
+  border-top-color:var(--a1);
+  border-right-color:var(--a2);
+  border-radius:50%;
+  animation:spin .8s linear infinite;
+  flex-shrink:0;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.proc-title{font-weight:700;font-size:1rem;color:var(--text)}
+.proc-bar{
+  height:3px;background:var(--surface-2);
+  border-radius:2px;overflow:hidden;margin-bottom:1rem;
+  position:relative;
+}
+.proc-bar::after{
+  content:'';position:absolute;top:0;left:-30%;
+  width:30%;height:100%;background:var(--grad);
+  border-radius:2px;
+  animation:slide-progress 1.4s var(--ease) infinite;
+}
+@keyframes slide-progress{to{left:100%}}
+.log-box{
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-3);
+  padding:.85rem 1rem;
+  font-size:.8rem;
+  font-family:'JetBrains Mono',monospace;
+  color:var(--text-2);
+  max-height:240px;overflow-y:auto;
+  line-height:1.65;
+}
+.log-line{padding:.05rem 0;animation:fadeInLine .25s var(--ease)}
+@keyframes fadeInLine{from{opacity:0;transform:translateX(-3px)}to{opacity:1;transform:translateX(0)}}
+.log-line.err{color:var(--error)}
+.log-line.ok{color:var(--success)}
+
+/* ── Result ──────────────────────────────────────────── */
+#result{padding:1.5rem 0 4rem;animation:slideUp .4s var(--ease)}
+.result-card{
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  border-radius:var(--r);
+  overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.result-card-header{
+  padding:1rem 1.25rem;
+  border-bottom:1px solid var(--border-2);
+  display:flex;align-items:center;justify-content:space-between;
+  flex-wrap:wrap;gap:.6rem;
+}
+.result-card-title{
+  font-weight:700;font-size:1rem;
+  display:flex;align-items:center;gap:.55rem;
+  color:var(--text);
+}
+.result-icon-wrap{
+  width:34px;height:34px;
+  background:var(--grad-soft);
+  border:1px solid rgba(124,58,237,.3);
+  border-radius:var(--r-3);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;
+}
+.stats-bar{
+  display:flex;flex-wrap:wrap;gap:1.2rem;
+}
+.stat{display:flex;align-items:center;gap:.4rem;font-size:.83rem}
+.stat-val{
+  font-weight:700;color:var(--text);
+  font-family:'JetBrains Mono',monospace;
+}
+.stat-lbl{color:var(--muted)}
+
+.result-body{
+  padding:1.25rem;
+  max-height:60vh;overflow-y:auto;
+}
+.content-preview{
+  font-size:.85rem;color:var(--text-2);line-height:1.7;
+  white-space:pre-wrap;word-break:break-word;
+  font-family:'JetBrains Mono',monospace;
+}
+.content-preview.markdown{font-family:'Inter',sans-serif;font-size:.92rem}
+.content-preview.markdown h1,
+.content-preview.markdown h2,
+.content-preview.markdown h3{margin:.8rem 0 .4rem;font-weight:700;color:var(--text)}
+.content-preview.markdown h1{font-size:1.3rem}
+.content-preview.markdown h2{font-size:1.1rem}
+.content-preview.markdown h3{font-size:1rem}
+.content-preview.markdown p{margin:.4rem 0}
+.content-preview.markdown ul,.content-preview.markdown ol{padding-left:1.3rem;margin:.4rem 0}
+.content-preview.markdown li{margin:.2rem 0}
+.content-preview.markdown blockquote{
+  border-left:3px solid var(--a1);
+  padding:.3rem .8rem;margin:.5rem 0;
+  background:rgba(124,58,237,.05);
+  border-radius:0 var(--r-4) var(--r-4) 0;
+}
+.content-preview.markdown code{
+  background:var(--surface-2);padding:.1rem .35rem;
+  border-radius:4px;font-family:'JetBrains Mono',monospace;
+  font-size:.85em;border:1px solid var(--border-2);
+}
+.content-preview.markdown table{
+  border-collapse:collapse;width:100%;margin:.5rem 0;
+  font-size:.85em;
+}
+.content-preview.markdown th,
+.content-preview.markdown td{
+  border:1px solid var(--border-2);
+  padding:.4rem .6rem;text-align:left;
+}
+.content-preview.markdown th{background:var(--surface-2);font-weight:600}
+.content-preview.markdown strong{color:var(--text);font-weight:600}
+.content-preview.markdown a{color:var(--a1);text-decoration:none}
+.content-preview.markdown a:hover{text-decoration:underline}
+.content-preview.markdown hr{border:none;border-top:1px solid var(--border-2);margin:1rem 0}
+
+.result-actions{
+  padding:1rem 1.25rem;
+  border-top:1px solid var(--border-2);
+  display:flex;gap:.6rem;flex-wrap:wrap;
+  background:var(--surface-2);
+}
+.btn-dl{
+  display:inline-flex;align-items:center;gap:.4rem;
+  background:var(--surface);
+  border:1px solid var(--border-2);
+  color:var(--text);
+  border-radius:var(--r-3);
+  padding:.55rem 1rem;
+  font-size:.85rem;font-weight:600;
+  cursor:pointer;text-decoration:none;font-family:inherit;
+  transition:all .2s var(--ease);
+}
+.btn-dl:hover{border-color:var(--a1);background:rgba(124,58,237,.08);transform:translateY(-1px)}
+.btn-chat{
+  display:inline-flex;align-items:center;gap:.4rem;
+  background:var(--grad);color:#fff;border:none;
+  border-radius:var(--r-3);padding:.55rem 1.1rem;
+  font-size:.85rem;font-weight:700;
+  cursor:pointer;font-family:inherit;
+  transition:all .2s var(--ease);
+  box-shadow:0 4px 12px rgba(124,58,237,.35), 0 1px 0 rgba(255,255,255,.15) inset;
+}
+.btn-chat:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(124,58,237,.5)}
+
+.ai-link-box{
+  background:rgba(16,185,129,.08);
+  border:1px solid rgba(16,185,129,.25);
+  border-radius:var(--r-3);
+  padding:.8rem 1rem;margin-top:.9rem;
+  font-size:.82rem;
+}
+.ai-link-label{
+  color:var(--success);font-weight:700;
+  margin-bottom:.35rem;
+  display:flex;align-items:center;gap:.4rem;
+}
+.ai-link-url{
+  color:var(--text);
+  font-family:'JetBrains Mono',monospace;
+  word-break:break-all;font-size:.78rem;
+  display:flex;align-items:center;gap:.5rem;
+}
+.copy-btn{
+  background:transparent;border:1px solid var(--border-2);
+  color:var(--muted);
+  border-radius:4px;padding:.2rem .55rem;
+  font-size:.72rem;cursor:pointer;font-family:inherit;
+  margin-left:auto;flex-shrink:0;
+  transition:all .2s var(--ease);
+}
+.copy-btn:hover{border-color:var(--a1);color:var(--text)}
+
+/* ── Chat drawer ─────────────────────────────────────── */
+.chat-backdrop{
+  position:fixed;inset:0;
+  background:rgba(0,0,0,.5);
+  backdrop-filter:blur(6px);
+  -webkit-backdrop-filter:blur(6px);
+  z-index:90;
+  opacity:0;pointer-events:none;
+  transition:opacity .3s var(--ease);
+}
+.chat-backdrop.open{opacity:1;pointer-events:all}
+.chat-drawer{
+  position:fixed;top:0;right:0;bottom:0;
+  width:min(520px,100vw);
+  background:var(--bg-2);
+  border-left:1px solid var(--border-2);
+  z-index:100;
+  display:flex;flex-direction:column;
+  transform:translateX(100%);
+  transition:transform .35s var(--ease);
+  box-shadow:-12px 0 40px rgba(0,0,0,.5);
+}
+.chat-drawer.open{transform:translateX(0)}
+.chat-header{
+  padding:1rem 1.25rem;
+  border-bottom:1px solid var(--border-2);
+  background:rgba(255,255,255,.02);
+  flex-shrink:0;
+  display:flex;align-items:center;justify-content:space-between;
+  gap:.5rem;
+}
+.chat-title{
+  font-weight:700;font-size:.95rem;
+  display:flex;align-items:center;gap:.55rem;
+}
+.chat-controls{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap}
+.model-select{
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:var(--r-4);
+  color:var(--text);font-size:.78rem;
+  padding:.4rem .65rem;outline:none;
+  cursor:pointer;font-family:inherit;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237d7d95' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+  background-repeat:no-repeat;background-position:right .5rem center;
+  background-size:12px;padding-right:1.7rem;
+  transition:border-color .2s var(--ease);
+}
+.model-select:hover{border-color:var(--border-3)}
+.think-toggle{
+  display:flex;align-items:center;gap:.35rem;
+  font-size:.75rem;color:var(--muted);cursor:pointer;
+}
+.think-toggle input{accent-color:var(--a1)}
+.btn-close-drawer{
+  background:transparent;border:none;
+  color:var(--muted);cursor:pointer;
+  width:32px;height:32px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;
+  transition:all .2s var(--ease);
+  font-family:inherit;
+}
+.btn-close-drawer:hover{background:var(--surface-2);color:var(--text)}
+.btn-clear{
+  background:transparent;border:1px solid var(--border-2);
+  color:var(--muted);
+  border-radius:var(--r-4);padding:.3rem .65rem;
+  font-size:.74rem;cursor:pointer;font-family:inherit;
+  transition:all .2s var(--ease);
+}
+.btn-clear:hover{border-color:var(--error);color:var(--error)}
+
+.chat-messages{
+  flex:1;overflow-y:auto;
+  padding:1rem 1.1rem;
+  display:flex;flex-direction:column;gap:.8rem;
+  min-height:0;
+}
+.msg{display:flex;flex-direction:column;gap:.25rem;max-width:90%;animation:msgIn .25s var(--ease)}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.msg.user{align-self:flex-end;align-items:flex-end}
+.msg.assistant{align-self:flex-start;align-items:flex-start}
+.msg-bubble{
+  padding:.75rem 1rem;border-radius:var(--r-2);
+  font-size:.9rem;line-height:1.6;
+  word-break:break-word;
+}
+.msg.user .msg-bubble{
+  background:var(--grad);color:#fff;
+  border-bottom-right-radius:4px;
+  box-shadow:0 2px 8px rgba(124,58,237,.3);
+}
+.msg.assistant .msg-bubble{
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  color:var(--text);
+  border-bottom-left-radius:4px;
+}
+.msg.assistant .msg-bubble h1,
+.msg.assistant .msg-bubble h2,
+.msg.assistant .msg-bubble h3{font-size:1em;font-weight:700;margin:.5rem 0 .25rem}
+.msg.assistant .msg-bubble p{margin:.35rem 0}
+.msg.assistant .msg-bubble ul,.msg.assistant .msg-bubble ol{padding-left:1.3rem;margin:.35rem 0}
+.msg.assistant .msg-bubble li{margin:.2rem 0}
+.msg.assistant .msg-bubble code{
+  background:rgba(255,255,255,.08);
+  padding:.1rem .35rem;border-radius:3px;
+  font-family:'JetBrains Mono',monospace;font-size:.85em;
+}
+.msg.assistant .msg-bubble pre{
+  background:rgba(0,0,0,.3);
+  border:1px solid var(--border-2);
+  border-radius:6px;padding:.75rem;
+  overflow-x:auto;margin:.5rem 0;
+}
+.msg.assistant .msg-bubble pre code{background:none;padding:0}
+.msg.assistant .msg-bubble blockquote{
+  border-left:3px solid var(--a1);
+  padding:.2rem .7rem;margin:.4rem 0;
+  background:rgba(124,58,237,.08);
+}
+.msg.assistant .msg-bubble strong{color:#fff}
+.msg-meta{font-size:.7rem;color:var(--muted-2);font-weight:500}
+
+.typing-dots span{
+  display:inline-block;width:6px;height:6px;
+  background:var(--a1);border-radius:50%;
+  animation:bounce .9s var(--ease) infinite;
+}
+.typing-dots span:nth-child(2){animation-delay:.15s}
+.typing-dots span:nth-child(3){animation-delay:.3s}
+@keyframes bounce{0%,60%,100%{transform:translateY(0);opacity:.7}30%{transform:translateY(-5px);opacity:1}}
+
+.chat-input-area{
+  padding:.85rem;
+  border-top:1px solid var(--border-2);
+  background:var(--surface);
+  flex-shrink:0;
+}
+.upload-preview{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}
+.upload-chip{
+  display:flex;align-items:center;gap:.3rem;
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:6px;padding:.25rem .55rem;
+  font-size:.74rem;color:var(--text-2);
+}
+.upload-chip button{
+  background:none;border:none;
+  color:var(--muted);cursor:pointer;
+  font-size:.95rem;line-height:1;padding:0 .15rem;
+}
+.chat-row{display:flex;gap:.45rem;align-items:flex-end}
+.chat-input{
+  flex:1;background:var(--surface-2);
+  border:1.5px solid var(--border-2);
+  border-radius:var(--r-3);
+  padding:.7rem .9rem;
+  color:var(--text);font-size:.92rem;font-family:inherit;
+  outline:none;resize:none;max-height:120px;line-height:1.5;
+  transition:border-color .2s var(--ease);
+}
+.chat-input:focus{border-color:var(--a1);box-shadow:0 0 0 3px rgba(124,58,237,.12)}
+.chat-btns{display:flex;gap:.4rem;flex-shrink:0}
+.btn-icon{
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  color:var(--muted);
+  border-radius:var(--r-3);
+  width:40px;height:40px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:1rem;font-family:inherit;
+  transition:all .2s var(--ease);
+}
+.btn-icon:hover{border-color:var(--a1);color:var(--text)}
+.btn-send{
+  background:var(--grad);color:#fff;border:none;
+  border-radius:var(--r-3);
+  width:40px;height:40px;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;
+  transition:all .2s var(--ease);
+  box-shadow:0 2px 8px rgba(124,58,237,.35);
+}
+.btn-send:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 4px 12px rgba(124,58,237,.5)}
+.btn-send:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── Empty state ─────────────────────────────────────── */
+.chat-empty{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  color:var(--muted);gap:.7rem;padding:2rem 1.5rem;
+  text-align:center;
+}
+.chat-empty-icon{
+  font-size:2.5rem;opacity:.3;
+  width:60px;height:60px;
+  background:var(--grad-soft);
+  border-radius:16px;
+  display:flex;align-items:center;justify-content:center;
+}
+.chat-empty p{font-size:.9rem;color:var(--text-2);max-width:300px;line-height:1.5}
+.tip-chips{
+  display:flex;flex-wrap:wrap;gap:.45rem;
+  justify-content:center;margin-top:.6rem;
+}
+.tip{
+  background:var(--surface-2);
+  border:1px solid var(--border-2);
+  border-radius:20px;padding:.4rem .85rem;
+  font-size:.78rem;cursor:pointer;
+  color:var(--text-2);font-weight:500;
+  transition:all .2s var(--ease);
+}
+.tip:hover{border-color:var(--a1);color:var(--text);transform:translateY(-1px)}
+
+/* ── Toast ───────────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:1.5rem;left:50%;
+  transform:translateX(-50%) translateY(100px);
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r-2);
+  padding:.7rem 1.1rem;
+  font-size:.88rem;font-weight:500;
+  z-index:200;
+  box-shadow:0 12px 36px rgba(0,0,0,.5);
+  transition:transform .3s var(--ease-bounce);
+  display:flex;align-items:center;gap:.55rem;
+  max-width:90vw;
+}
+.toast.show{transform:translateX(-50%) translateY(0)}
+.toast.success{border-color:rgba(16,185,129,.4)}
+.toast.error{border-color:rgba(239,68,68,.4)}
+
+/* ── Mobile ──────────────────────────────────────────── */
+@media (max-width:720px){
+  #hero{padding:3rem 0 2rem}
+  .hero-sub{margin-bottom:2rem}
+  .url-box{flex-direction:column;padding:.6rem;border-radius:var(--r)}
+  .url-box .icon{display:none}
+  .url-box input{padding:.65rem .75rem}
+  .btn-go{width:100%;justify-content:center;padding:.75rem}
+  .opt-row{grid-template-columns:1fr}
+  .tabs{flex-wrap:wrap}
+  .tab{font-size:.8rem;padding:.6rem .5rem}
+  .tab-icon{font-size:.95rem}
+  .video-card{padding:.7rem}
+  .video-thumb{width:80px;height:45px}
+  .video-meta h3{font-size:.85rem}
+  .stats-bar{gap:.7rem}
+  .result-card-header{flex-direction:column;align-items:flex-start}
+  .nav-badge{display:none}
+  .chat-drawer{width:100vw}
+  .chat-controls{gap:.35rem}
+  .model-select{font-size:.72rem;padding:.32rem .55rem;padding-right:1.4rem}
+}
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav>
+  <div class="logo"><span class="logo-dot"></span>yt<span>bro</span></div>
+  <div class="nav-right">
+    <div class="nav-badge">Free · No Sign-up</div>
+  </div>
+</nav>
+
+<div class="container">
+
+<!-- Hero -->
+<section id="hero">
+  <div class="hero-eyebrow"><span class="dot"></span>Free · 99 Languages · No Sign-up</div>
+  <h1 class="hero-title">Analyze YouTube<br/>with <span class="grad">AI</span></h1>
+  <p class="hero-sub">Download comments, captions and AI transcripts — then chat with Claude, GPT-5 or Gemini about any video</p>
+
+  <div class="url-box">
+    <span class="icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+    </span>
+    <input id="url-input" type="text" placeholder="Paste YouTube URL or video ID…" autocomplete="off" spellcheck="false"/>
+    <button class="btn-go" id="btn-analyze" onclick="analyzeUrl()">
+      <span>Analyze</span>
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h10M9 4l4 4-4 4"/></svg>
+    </button>
+  </div>
+
+  <div class="pills">
+    <div class="pill"><span class="ico">💬</span> Comments</div>
+    <div class="pill"><span class="ico">📝</span> Captions</div>
+    <div class="pill"><span class="ico">🎙️</span> AI Transcript</div>
+    <div class="pill"><span class="ico">🤖</span> Chat with AI</div>
+  </div>
+</section>
+
+<!-- Video info -->
+<section id="video-info" class="hidden">
+  <div class="video-card">
+    <img id="vid-thumb" class="video-thumb" src="" alt=""/>
+    <div class="video-meta">
+      <h3 id="vid-title">Loading…</h3>
+      <span id="vid-id" class="video-id"></span>
+    </div>
+  </div>
+</section>
+
+<!-- Action tabs -->
+<section id="actions" class="hidden">
+  <div class="tabs">
+    <button class="tab active" id="tab-comments" onclick="switchTab('comments')">
+      <span class="tab-icon">💬</span><span>Comments</span>
+    </button>
+    <button class="tab" id="tab-captions" onclick="switchTab('captions')">
+      <span class="tab-icon">📝</span><span>Captions</span>
+    </button>
+    <button class="tab" id="tab-transcribe" onclick="switchTab('transcribe')">
+      <span class="tab-icon">🎙️</span><span>Transcribe</span>
+    </button>
+  </div>
+
+  <!-- Comments -->
+  <div id="opt-comments" class="options-panel">
+    <div class="opt-row">
+      <div class="opt-group">
+        <label>Sort By</label>
+        <select id="sort-mode">
+          <option value="recent">Most Recent</option>
+          <option value="popular">Most Popular</option>
+        </select>
+      </div>
+      <div class="opt-group">
+        <label>Max Comments (0 = all)</label>
+        <input type="number" id="max-comments" value="0" min="0" step="100"/>
+      </div>
+    </div>
+    <button class="btn-main" onclick="startDownload('comments')">
+      <span>⬇️</span> Download All Comments
+    </button>
+  </div>
+
+  <!-- Captions -->
+  <div id="opt-captions" class="options-panel hidden">
+    <button class="check-langs-btn" onclick="checkLanguages()">
+      <span>🔍</span> Check Available Languages
+    </button>
+    <div id="lang-list-wrap" class="hidden">
+      <div class="opt-group">
+        <label>Select Language</label>
+        <div class="lang-list" id="lang-list"></div>
+      </div>
+    </div>
+    <button class="btn-main" id="btn-dl-captions" onclick="startDownload('captions')">
+      <span>⬇️</span> Download Captions
+    </button>
+  </div>
+
+  <!-- Transcribe -->
+  <div id="opt-transcribe" class="options-panel hidden">
+    <div class="opt-group" style="margin-bottom:.85rem">
+      <label>Audio Source</label>
+      <div class="src-toggle">
+        <button class="src-btn active" id="src-url" onclick="setSrc('url')">📺 From YouTube URL</button>
+        <button class="src-btn" id="src-file" onclick="setSrc('file')">📁 Upload Audio File</button>
+      </div>
+    </div>
+
+    <div id="src-file-section" class="hidden">
+      <div class="opt-group" style="margin-bottom:.6rem">
+        <label>Audio File</label>
+        <input type="file" id="audio-file" accept="audio/*,video/*,.mp3,.wav,.m4a,.flac,.ogg,.webm,.mp4" onchange="onAudioFile(this)"/>
+        <div id="audio-file-info" style="font-size:.78rem;color:var(--muted);margin-top:.5rem"></div>
+      </div>
+      <details class="yt-helper">
+        <summary>Need to extract audio from a YouTube URL?</summary>
+        <div class="yt-helper-body">
+          <p>Use any of these free tools to download the audio MP3, then upload below:</p>
+          <a href="https://cobalt.tools" target="_blank" rel="noopener" class="yt-tool">🟣 Cobalt.tools <span>clean · no ads</span></a>
+          <a href="https://yt5s.io" target="_blank" rel="noopener" class="yt-tool">🟢 YT5S.io <span>fast MP3 converter</span></a>
+          <a href="https://ytmp3.gg" target="_blank" rel="noopener" class="yt-tool">🔵 YTMP3.gg <span>simple &amp; reliable</span></a>
+          <a href="https://9convert.com" target="_blank" rel="noopener" class="yt-tool">🟠 9Convert.com <span>alternative</span></a>
+        </div>
+      </details>
+    </div>
+
+    <div class="opt-row">
+      <div class="opt-group">
+        <label>Engine</label>
+        <select id="trans-engine" onchange="onEngineChange()">
+          <option value="browser">🌐 Browser Whisper · free · 99 langs</option>
+          <option value="groq">⚡ Groq Cloud · faster · needs key</option>
+        </select>
+      </div>
+      <div class="opt-group">
+        <label id="trans-model-label">Model</label>
+        <select id="trans-model">
+          <option value="Xenova/whisper-tiny">Tiny — fastest · 75MB</option>
+          <option value="Xenova/whisper-base" selected>Base — balanced · 150MB</option>
+          <option value="Xenova/whisper-small">Small — accurate · 480MB</option>
+        </select>
+      </div>
+    </div>
+    <div id="groq-key-row" class="opt-row hidden" style="grid-template-columns:1fr">
+      <div class="opt-group">
+        <label>Groq API Key <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--a1);font-size:.7rem;text-decoration:none">get free key →</a></label>
+        <input type="password" id="groq-key" placeholder="gsk_…" oninput="saveGroqKey(this.value)"/>
+      </div>
+    </div>
+    <button class="btn-main" onclick="startTranscribe()">
+      <span>🎙️</span> Generate Transcript
+    </button>
+  </div>
+</section>
+
+<!-- Processing -->
+<section id="processing" class="hidden">
+  <div class="proc-card">
+    <div class="proc-header">
+      <div class="spinner"></div>
+      <div class="proc-title" id="proc-title">Processing…</div>
+    </div>
+    <div class="proc-bar"></div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+</section>
+
+<!-- Result -->
+<section id="result" class="hidden">
+  <div class="result-card">
+    <div class="result-card-header">
+      <div class="result-card-title">
+        <div class="result-icon-wrap"><span id="result-icon">📄</span></div>
+        <span id="result-label">Content</span>
+      </div>
+      <div id="result-stats" class="stats-bar"></div>
+    </div>
+    <div class="result-body">
+      <div class="content-preview markdown" id="content-preview"></div>
+      <div id="ai-link-box" class="ai-link-box hidden">
+        <div class="ai-link-label">🤖 AI-Readable Link</div>
+        <div class="ai-link-url">
+          <span id="ai-link-url"></span>
+          <button class="copy-btn" onclick="copyAiLink()">Copy</button>
+        </div>
+      </div>
+    </div>
+    <div class="result-actions">
+      <a id="btn-download" class="btn-dl" href="#" download>
+        <span>⬇️</span> Download .md
+      </a>
+      <button class="btn-dl" onclick="copyContent()">
+        <span>📋</span> Copy
+      </button>
+      <button class="btn-chat" onclick="openChat()" style="margin-left:auto">
+        <span>🤖</span> Analyze with AI
+      </button>
+    </div>
+  </div>
+</section>
+
+</div><!-- /container -->
+
+<!-- Chat drawer -->
+<div class="chat-backdrop" id="chat-backdrop" onclick="closeChat()"></div>
+<aside class="chat-drawer" id="chat-drawer" aria-label="AI Chat">
+  <div class="chat-header">
+    <div class="chat-title">
+      <div class="result-icon-wrap" style="width:30px;height:30px;font-size:.95rem">🤖</div>
+      <span>AI Chat</span>
+    </div>
+    <div class="chat-controls">
+      <select class="model-select" id="chat-model">
+        <option value="claude">Claude Sonnet</option>
+        <option value="claude-opus">Claude Opus</option>
+        <option value="gpt-5.4">GPT-5.4</option>
+        <option value="gemini">Gemini</option>
+        <option value="sonar-pro">Sonar Pro</option>
+        <option value="sonar">Sonar</option>
+        <option value="r1">DeepSeek R1</option>
+        <option value="reasoning">Reasoning</option>
+        <option value="deep-research">Deep Research</option>
+      </select>
+      <label class="think-toggle">
+        <input type="checkbox" id="thinking-toggle"/> Think
+      </label>
+      <button class="btn-clear" onclick="clearChat()">Clear</button>
+      <button class="btn-close-drawer" onclick="closeChat()" aria-label="Close chat">×</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chat-messages">
+    <div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-icon">🤖</div>
+      <p>Click <strong>Analyze with AI</strong> on the result to chat about your content</p>
+      <div class="tip-chips">
+        <div class="tip" onclick="sendTip(this)">Summarize this</div>
+        <div class="tip" onclick="sendTip(this)">Key themes?</div>
+        <div class="tip" onclick="sendTip(this)">Sentiment?</div>
+        <div class="tip" onclick="sendTip(this)">Top comments</div>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="file-upload" multiple accept="image/*,.pdf,.txt,.md,.csv" style="display:none" onchange="handleFiles(this)"/>
+  <div class="chat-input-area">
+    <div class="upload-preview" id="upload-preview"></div>
+    <div class="chat-row">
+      <textarea class="chat-input" id="chat-input" rows="1" placeholder="Ask anything about the content…" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+      <div class="chat-btns">
+        <button class="btn-icon" onclick="document.getElementById('file-upload').click()" title="Attach file">📎</button>
+        <button class="btn-send" id="btn-send" onclick="sendMessage()" title="Send">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2L2 8l4 2 2 4 6-12z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- Toast -->
+<div class="toast" id="toast"><span id="toast-msg"></span></div>
+
+<script>
+// ── Config ────────────────────────────────────────────
+const BACKEND = 'https://redstdui-ytbro-api.hf.space';
+const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
+
+let state = {
+  videoId:'', videoUrl:'', currentTab:'comments', selectedLang:null,
+  result:null, chatHistory:[], uploadedFiles:[], contextLoaded:false,
+  transSrc:'url', audioFile:null,
+  whisperPipeline:null, whisperModelId:null,
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('groq_key');
+  if (saved) document.getElementById('groq-key').value = saved;
+  document.getElementById('url-input').addEventListener('keydown', e => { if (e.key === 'Enter') analyzeUrl(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChat(); });
+});
+
+// ── Toast ─────────────────────────────────────────────
+function toast(msg, type=''){
+  const t = document.getElementById('toast');
+  document.getElementById('toast-msg').textContent = msg;
+  t.className = 'toast show' + (type ? ' '+type : '');
+  setTimeout(() => t.classList.remove('show'), 2600);
+}
+
+// ── URL analyze ───────────────────────────────────────
+async function analyzeUrl(){
+  const url = document.getElementById('url-input').value.trim();
+  if (!url) { toast('Paste a YouTube URL first', 'error'); return; }
+
+  setHero(false);
+  show('video-info');
+  document.getElementById('vid-title').textContent = 'Loading…';
+
+  try {
+    const res = await fetch(\`\${BACKEND}/api/video/info\`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url}),
+    });
+    const data = await res.json();
+    if (data.error) { toast('Invalid YouTube URL', 'error'); return; }
+
+    state.videoId = data.video_id;
+    state.videoUrl = data.url;
+    document.getElementById('vid-thumb').src = data.thumbnail;
+    document.getElementById('vid-title').textContent = data.title;
+    document.getElementById('vid-id').textContent = data.video_id;
+    show('actions');
+    switchTab('comments');
+    hide('result'); hide('processing');
+  } catch (e) {
+    toast('Backend unreachable', 'error');
+  }
+}
+
+function switchTab(tab){
+  state.currentTab = tab;
+  ['comments','captions','transcribe'].forEach(t => {
+    document.getElementById(\`tab-\${t}\`).classList.toggle('active', t === tab);
+    document.getElementById(\`opt-\${t}\`).classList.toggle('hidden', t !== tab);
+  });
+}
+
+// ── Captions language check ───────────────────────────
+async function checkLanguages(){
+  const btn = document.querySelector('.check-langs-btn');
+  btn.innerHTML = '<span>⏳</span> Checking…';
+  btn.disabled = true;
+  try {
+    const res = await fetch(\`\${BACKEND}/api/captions/languages\`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: state.videoUrl}),
+    });
+    const data = await res.json();
+    const list = document.getElementById('lang-list');
+    list.innerHTML = '';
+    [...(data.manual||[]).map(l => ({...l, type:'manual'})),
+     ...(data.auto||[]).map(l => ({...l, type:'auto'}))]
+      .forEach(lang => {
+        const div = document.createElement('div');
+        div.className = 'lang-item';
+        div.innerHTML = \`<span>\${lang.name}</span><span class="lang-badge">\${lang.type}</span>\`;
+        div.onclick = () => {
+          document.querySelectorAll('.lang-item').forEach(el => el.classList.remove('selected'));
+          div.classList.add('selected');
+          state.selectedLang = {code: lang.code, name: lang.name};
+        };
+        list.appendChild(div);
+      });
+    show('lang-list-wrap');
+    btn.innerHTML = '<span>✅</span> Languages loaded';
+  } catch (e) {
+    btn.innerHTML = '<span>❌</span> Failed — retry';
+    btn.disabled = false;
+  }
+}
+
+// ── Transcribe controls ──────────────────────────────
+function setSrc(src){
+  state.transSrc = src;
+  document.getElementById('src-url').classList.toggle('active', src === 'url');
+  document.getElementById('src-file').classList.toggle('active', src === 'file');
+  document.getElementById('src-file-section').classList.toggle('hidden', src !== 'file');
+}
+function onAudioFile(input){
+  const f = input.files[0];
+  if (!f) { state.audioFile = null; document.getElementById('audio-file-info').textContent = ''; return; }
+  state.audioFile = f;
+  const mb = (f.size/1048576).toFixed(1);
+  document.getElementById('audio-file-info').textContent = \`📎 \${f.name} · \${mb} MB · \${f.type || 'audio'}\`;
+}
+function onEngineChange(){
+  const eng = document.getElementById('trans-engine').value;
+  const groqRow = document.getElementById('groq-key-row');
+  const lbl = document.getElementById('trans-model-label');
+  const sel = document.getElementById('trans-model');
+  if (eng === 'groq') {
+    groqRow.classList.remove('hidden');
+    lbl.textContent = 'Groq Model';
+    sel.innerHTML = \`
+      <option value="whisper-large-v3">whisper-large-v3 (best · 99 langs)</option>
+      <option value="whisper-large-v3-turbo">whisper-large-v3-turbo (fast)</option>\`;
+  } else {
+    groqRow.classList.add('hidden');
+    lbl.textContent = 'Browser Model';
+    sel.innerHTML = \`
+      <option value="Xenova/whisper-tiny">Tiny — fastest · 75MB</option>
+      <option value="Xenova/whisper-base" selected>Base — balanced · 150MB</option>
+      <option value="Xenova/whisper-small">Small — accurate · 480MB</option>\`;
+  }
+}
+
+async function startTranscribe(){
+  const engine = document.getElementById('trans-engine').value;
+  const model = document.getElementById('trans-model').value;
+  const src = state.transSrc;
+  if (src === 'file' && !state.audioFile) { toast('Choose an audio file first', 'error'); return; }
+  if (src === 'url' && !state.videoUrl) { toast('Paste & analyze a YouTube URL first', 'error'); return; }
+
+  hide('actions'); show('processing'); hide('result');
+  state.result = null; state.chatHistory = []; state.contextLoaded = false;
+  const log = document.getElementById('log-box'); log.innerHTML = '';
+  document.getElementById('proc-title').textContent = '🎙️ Generating transcript…';
+
+  try {
+    if (engine === 'browser') await transcribeWithBrowserWhisper(model, src, log);
+    else await transcribeWithGroq(model, src, log);
+    showResult('transcribe');
+  } catch (err) {
+    addLog(log, '❌ ' + (err.message||err), 'err');
+    document.getElementById('proc-title').textContent = '❌ Transcription failed';
+    document.querySelector('.spinner').style.display = 'none';
+    show('actions');
+  }
+}
+
+// ── Browser Whisper ──────────────────────────────────
+async function transcribeWithBrowserWhisper(modelId, src, log){
+  addLog(log, 'Loading Transformers.js…');
+  const tf = await import('https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2');
+  tf.env.allowLocalModels = false;
+  tf.env.useBrowserCache = true;
+
+  let blob;
+  if (src === 'file') {
+    blob = state.audioFile;
+    addLog(log, \`Using uploaded file: \${state.audioFile.name}\`);
+  } else {
+    throw new Error('Browser Whisper needs an audio file. Switch to "Upload Audio File" mode.');
+  }
+
+  addLog(log, 'Decoding audio…');
+  const arrayBuf = await blob.arrayBuffer();
+  const audioCtx = new (window.AudioContext||window.webkitAudioContext)({sampleRate: 16000});
+  let decoded;
+  try { decoded = await audioCtx.decodeAudioData(arrayBuf); }
+  catch(e){ throw new Error('Could not decode audio. Try MP3, WAV, M4A or OGG.'); }
+  let mono;
+  if (decoded.numberOfChannels === 1) mono = decoded.getChannelData(0);
+  else {
+    const a = decoded.getChannelData(0), b = decoded.getChannelData(1);
+    mono = new Float32Array(a.length);
+    for (let i = 0; i < a.length; i++) mono[i] = (a[i]+b[i])/2;
+  }
+  const durSec = mono.length/16000;
+  addLog(log, \`Audio: \${Math.floor(durSec/60)}m\${Math.floor(durSec%60)}s · 16kHz mono\`);
+
+  if (state.whisperModelId !== modelId) {
+    addLog(log, \`Loading model \${modelId} (downloads first time, then cached)…\`);
+    state.whisperPipeline = await tf.pipeline('automatic-speech-recognition', modelId, {
+      progress_callback: (p) => {
+        if (p.status === 'progress' && p.progress) {
+          const pct = p.progress.toFixed(0);
+          const lines = log.querySelectorAll('.log-line');
+          const last = lines[lines.length-1];
+          if (last && last.dataset.kind === 'progress') {
+            last.textContent = \`> Downloading \${p.file||'model'}: \${pct}%\`;
+          } else {
+            const d = document.createElement('div');
+            d.className = 'log-line'; d.dataset.kind = 'progress';
+            d.textContent = \`> Downloading \${p.file||'model'}: \${pct}%\`;
+            log.appendChild(d); log.scrollTop = log.scrollHeight;
+          }
+        }
+      },
+    });
+    state.whisperModelId = modelId;
+    addLog(log, 'Model loaded ✓', 'ok');
+  }
+
+  addLog(log, 'Transcribing…');
+  const result = await state.whisperPipeline(mono, {
+    return_timestamps: true,
+    chunk_length_s: 30,
+    stride_length_s: 5,
+  });
+
+  const text = result.text || '';
+  const lang = result.language || 'auto';
+  const wordCount = text.split(/\\s+/).filter(Boolean).length;
+  const title = (src === 'file') ? state.audioFile.name.replace(/\\.[^.]+$/, '') : (document.getElementById('vid-title').textContent || 'Audio');
+
+  let md = \`# Transcript: \${title}\\n\\n- **Engine:** Browser Whisper (\${modelId})\\n- **Language:** \${lang}\\n- **Words:** \${wordCount.toLocaleString()}\\n- **Duration:** \${Math.floor(durSec/60)}m\${Math.floor(durSec%60)}s\\n\\n---\\n\\n\`;
+  if (result.chunks && result.chunks.length) {
+    for (const c of result.chunks) {
+      const t = c.timestamp && c.timestamp[0] != null ? formatTs(c.timestamp[0]) : '';
+      md += t ? \`**[\${t}]** \${c.text.trim()}\\n\\n\` : \`\${c.text.trim()}\\n\\n\`;
+    }
+  } else md += text;
+
+  state.result = {
+    type:'result', content: md, title,
+    filename: \`transcript_\${title.replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)}.md\`,
+    stats: { words: wordCount, language: lang, duration: \`\${Math.floor(durSec/60)}m\${Math.floor(durSec%60)}s\` },
+  };
+  addLog(log, \`Done! \${wordCount.toLocaleString()} words · language: \${lang}\`, 'ok');
+}
+
+function formatTs(s){
+  s = Math.floor(s||0);
+  const m = Math.floor(s/60), ss = String(s%60).padStart(2,'0');
+  return \`\${String(m).padStart(2,'0')}:\${ss}\`;
+}
+
+// ── Groq cloud (file or URL) ─────────────────────────
+async function transcribeWithGroq(model, src, log){
+  const apiKey = document.getElementById('groq-key').value.trim();
+  if (!apiKey) throw new Error('Enter a Groq API key first.');
+
+  if (src === 'file') {
+    addLog(log, \`Uploading \${state.audioFile.name} to Groq…\`);
+    const form = new FormData();
+    form.append('file', state.audioFile);
+    form.append('api_key', apiKey);
+    form.append('model', model);
+    const res = await fetch(\`\${BACKEND}/api/transcribe/file\`, { method:'POST', body: form });
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(\`Groq upload failed: \${err.substring(0,200)}\`);
+    }
+    await readSSE(res, log);
+  } else {
+    addLog(log, 'Sending YouTube URL to Groq backend…');
+    const res = await fetch(\`\${BACKEND}/api/transcribe\`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({url: state.videoUrl, api_key: apiKey, model}),
+    });
+    await readSSE(res, log);
+  }
+}
+
+async function readSSE(res, log){
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream:true});
+    const lines = buf.split('\\n');
+    buf = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        const evt = JSON.parse(line.slice(6));
+        if (evt.type === 'progress') addLog(log, evt.message);
+        else if (evt.type === 'result') { state.result = evt; addLog(log, '✅ Done!', 'ok'); }
+        else if (evt.type === 'error') { addLog(log, '❌ ' + evt.message, 'err'); throw new Error(evt.message); }
+        else if (evt.type === 'done') return;
+      } catch(e) { if (e.message) throw e; }
+    }
+  }
+}
+
+// ── Comments / Captions / YouTube transcribe ──────────
+async function startDownload(type){
+  hide('actions'); show('processing'); hide('result');
+  state.result = null; state.chatHistory = []; state.contextLoaded = false;
+  const log = document.getElementById('log-box'); log.innerHTML = '';
+
+  const titles = {
+    comments: '💬 Downloading comments…',
+    captions: '📝 Downloading captions…',
+  };
+  document.getElementById('proc-title').textContent = titles[type];
+
+  let endpoint, body;
+  if (type === 'comments') {
+    endpoint = '/api/comments';
+    body = {url: state.videoUrl, sort: document.getElementById('sort-mode').value, max_comments: parseInt(document.getElementById('max-comments').value)||0};
+  } else if (type === 'captions') {
+    if (!state.selectedLang) { toast('Select a language first', 'error'); show('actions'); hide('processing'); return; }
+    endpoint = '/api/captions/download';
+    body = {url: state.videoUrl, lang_code: state.selectedLang.code, lang_name: state.selectedLang.name};
+  }
+
+  try {
+    const res = await fetch(\`\${BACKEND}\${endpoint}\`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    await readSSE(res, log);
+    showResult(type);
+  } catch (err) {
+    addLog(log, '❌ ' + err.message, 'err');
+    document.getElementById('proc-title').textContent = '❌ Download failed';
+    document.querySelector('.spinner').style.display = 'none';
+    show('actions');
+  }
+}
+
+function addLog(box, msg, cls=''){
+  const div = document.createElement('div');
+  div.className = 'log-line' + (cls ? ' ' + cls : '');
+  div.textContent = '> ' + msg;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+
+// ── Result view ──────────────────────────────────────
+function showResult(type){
+  if (!state.result) {
+    document.getElementById('proc-title').textContent = '❌ Failed — see log above';
+    document.querySelector('.spinner').style.display = 'none';
+    show('actions');
+    return;
+  }
+  hide('processing'); show('result');
+
+  const icons = {comments:'💬', captions:'📝', transcribe:'🎙️'};
+  const labels = {comments:'Comments', captions:'Captions', transcribe:'Transcript'};
+  document.getElementById('result-icon').textContent = icons[type];
+  document.getElementById('result-label').textContent = labels[type];
+
+  const s = state.result.stats || {};
+  let html = '';
+  if (s.total)    html += \`<span class="stat"><span class="stat-val">\${s.total.toLocaleString()}</span><span class="stat-lbl">comments</span></span>\`;
+  if (s.words)    html += \`<span class="stat"><span class="stat-val">\${s.words.toLocaleString()}</span><span class="stat-lbl">words</span></span>\`;
+  if (s.duration) html += \`<span class="stat"><span class="stat-val">\${s.duration}</span><span class="stat-lbl">duration</span></span>\`;
+  if (s.language) html += \`<span class="stat"><span class="stat-val">\${s.language}</span><span class="stat-lbl">lang</span></span>\`;
+  document.getElementById('result-stats').innerHTML = html;
+
+  const content = state.result.content || '';
+  const preview = document.getElementById('content-preview');
+  preview.innerHTML = marked.parse(content.substring(0, 8000) + (content.length > 8000 ? '\\n\\n_…truncated_' : ''));
+
+  if (state.result.ai_url) {
+    document.getElementById('ai-link-url').textContent = state.result.ai_url;
+    show('ai-link-box');
+  } else hide('ai-link-box');
+
+  const blob = new Blob([content], {type:'text/markdown'});
+  const dl = document.getElementById('btn-download');
+  dl.href = URL.createObjectURL(blob);
+  dl.download = state.result.filename || 'content.md';
+}
+
+function copyContent(){
+  navigator.clipboard.writeText(state.result?.content || '');
+  toast('✅ Copied to clipboard', 'success');
+}
+function copyAiLink(){
+  navigator.clipboard.writeText(document.getElementById('ai-link-url').textContent);
+  toast('✅ Link copied', 'success');
+}
+
+// ── Chat drawer ──────────────────────────────────────
+function openChat(){
+  document.getElementById('chat-backdrop').classList.add('open');
+  document.getElementById('chat-drawer').classList.add('open');
+  if (state.result && !state.contextLoaded) {
+    state.contextLoaded = true;
+    const title = state.result.title || 'this content';
+    const content = (state.result.content || '').substring(0, 15000);
+    state.chatHistory = [{
+      role:'system',
+      content: \`You are an AI assistant analyzing YouTube content.\\nTitle: "\${title}"\\nDownloaded content:\\n\\n\${content}\\n\\nHelp the user understand, summarize, and analyze this content. Be direct and insightful.\`
+    }];
+    const empty = document.getElementById('chat-empty');
+    if (empty) empty.remove();
+    appendMsg('assistant', \`I've loaded **"\${title}"**.\\n\\nAsk me anything — I can summarize, find key themes, analyze sentiment, or answer specific questions.\`);
+  }
+  setTimeout(() => document.getElementById('chat-input').focus(), 350);
+}
+function closeChat(){
+  document.getElementById('chat-backdrop').classList.remove('open');
+  document.getElementById('chat-drawer').classList.remove('open');
+}
+function sendTip(el){ openChat(); document.getElementById('chat-input').value = el.textContent; sendMessage(); }
+
+async function sendMessage(){
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text && state.uploadedFiles.length === 0) return;
+
+  const btn = document.getElementById('btn-send');
+  btn.disabled = true;
+  input.value = ''; input.style.height = 'auto';
+
+  let content;
+  if (state.uploadedFiles.length > 0) {
+    content = [{type:'text', text}];
+    state.uploadedFiles.forEach(f => {
+      if (f.dataUri.startsWith('data:image')) content.push({type:'image_url', image_url:{url:f.dataUri}});
+    });
+  } else content = text;
+
+  appendMsg('user', text, state.uploadedFiles.map(f => f.name));
+  state.uploadedFiles = []; document.getElementById('upload-preview').innerHTML = '';
+  state.chatHistory.push({role:'user', content});
+
+  const model = document.getElementById('chat-model').value;
+  const thinking = document.getElementById('thinking-toggle').checked;
+
+  const msgs = document.getElementById('chat-messages');
+  const wrap = document.createElement('div');
+  wrap.className = 'msg assistant';
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  bubble.innerHTML = '<span class="typing-dots"><span></span><span></span><span></span></span>';
+  const meta = document.createElement('div'); meta.className = 'msg-meta'; meta.textContent = model;
+  wrap.appendChild(bubble); wrap.appendChild(meta); msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  try {
+    const res = await fetch(AI_API, {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Accept':'text/event-stream'},
+      body: JSON.stringify({model, thinking, messages: state.chatHistory, stream:true}),
+    });
+    if (!res.ok) {
+      bubble.textContent = \`❌ Server returned \${res.status}. Try a different model.\`;
+      btn.disabled = false; return;
+    }
+    let acc = '';
+    const ct = (res.headers.get('Content-Type')||'').toLowerCase();
+    if (ct.includes('event-stream') || ct.includes('text/plain')) {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const {done, value} = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, {stream:true});
+        const lines = buf.split('\\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (!data || data === '[DONE]') continue;
+          try {
+            const j = JSON.parse(data);
+            const delta = j.choices?.[0]?.delta?.content || j.choices?.[0]?.message?.content || j.delta || j.content || '';
+            if (delta) {
+              acc += delta;
+              bubble.innerHTML = marked.parse(acc);
+              msgs.scrollTop = msgs.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+    } else {
+      const data = await res.json();
+      acc = data.choices?.[0]?.message?.content || data.content || '(No response)';
+      bubble.innerHTML = marked.parse(acc);
+    }
+    if (!acc.trim()) bubble.textContent = '(No response — try again or switch model)';
+    state.chatHistory.push({role:'assistant', content: acc});
+  } catch (err) {
+    bubble.textContent = \`❌ Error: \${err.message}\`;
+  }
+  btn.disabled = false;
+  document.getElementById('chat-input').focus();
+}
+
+function appendMsg(role, text, fileNames=[]){
+  const msgs = document.getElementById('chat-messages');
+  const empty = document.getElementById('chat-empty');
+  if (empty) empty.remove();
+  const wrap = document.createElement('div'); wrap.className = \`msg \${role}\`;
+  const bubble = document.createElement('div'); bubble.className = 'msg-bubble';
+  if (role === 'assistant') bubble.innerHTML = marked.parse(text);
+  else {
+    bubble.textContent = text;
+    if (fileNames.length) {
+      fileNames.forEach(n => {
+        const c = document.createElement('div');
+        c.style.cssText = 'font-size:.72rem;opacity:.75;margin-top:.3rem';
+        c.textContent = '📎 ' + n;
+        bubble.appendChild(c);
+      });
+    }
+  }
+  const meta = document.createElement('div'); meta.className = 'msg-meta';
+  meta.textContent = role === 'user' ? 'You' : document.getElementById('chat-model').value;
+  wrap.appendChild(bubble); wrap.appendChild(meta);
+  msgs.appendChild(wrap);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function handleFiles(input){
+  const preview = document.getElementById('upload-preview');
+  Array.from(input.files).forEach(file => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      state.uploadedFiles.push({name: file.name, dataUri: e.target.result});
+      const chip = document.createElement('div');
+      chip.className = 'upload-chip';
+      chip.innerHTML = \`📎 \${file.name} <button onclick="removeFile('\${file.name}',this.parentElement)">×</button>\`;
+      preview.appendChild(chip);
+    };
+    reader.readAsDataURL(file);
+  });
+  input.value = '';
+}
+function removeFile(name, el){
+  state.uploadedFiles = state.uploadedFiles.filter(f => f.name !== name);
+  el.remove();
+}
+function clearChat(){
+  state.chatHistory = []; state.contextLoaded = false;
+  document.getElementById('chat-messages').innerHTML = \`
+    <div class="chat-empty" id="chat-empty">
+      <div class="chat-empty-icon">🤖</div>
+      <p>Click <strong>Analyze with AI</strong> on the result to chat about your content</p>
+      <div class="tip-chips">
+        <div class="tip" onclick="sendTip(this)">Summarize this</div>
+        <div class="tip" onclick="sendTip(this)">Key themes?</div>
+        <div class="tip" onclick="sendTip(this)">Sentiment?</div>
+        <div class="tip" onclick="sendTip(this)">Top comments</div>
+      </div>
+    </div>\`;
+}
+function handleKey(e){ if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+function autoResize(el){ el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+function saveGroqKey(val){ localStorage.setItem('groq_key', val); }
+function show(id){ document.getElementById(id).classList.remove('hidden'); }
+function hide(id){ document.getElementById(id).classList.add('hidden'); }
+function setHero(visible){
+  const el = document.getElementById('hero');
+  el.style.paddingTop = visible ? '5rem' : '1.5rem';
+  el.style.paddingBottom = visible ? '3rem' : '1rem';
+  el.querySelector('.hero-eyebrow').style.display = visible ? '' : 'none';
+  el.querySelector('.hero-title').style.display = visible ? '' : 'none';
+  el.querySelector('.hero-sub').style.display = visible ? '' : 'none';
+  el.querySelector('.pills').style.display = visible ? '' : 'none';
+}
+</script>
+</body>
+</html>`;
