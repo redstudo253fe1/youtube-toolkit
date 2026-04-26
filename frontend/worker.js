@@ -1827,7 +1827,21 @@ function openChat(){
       : fullContent;
     state.chatHistory = [{
       role:'system',
-      content: \`You are analyzing YouTube content from the video titled "\${title}".\\nContent type: \${state.currentTab}.\\nFull content (\${fullContent.length === content.length ? 'COMPLETE' : 'partial'}):\\n\\n\${content}\\n\\nBe direct, insightful, and use markdown formatting. When the user asks about a specific user/comment, search the entire content carefully before saying it doesn't exist.\`
+      content: \`You have access to YouTube \${state.currentTab} from the video "\${title}".
+
+CRITICAL RULES:
+1. ANSWER THE EXACT QUESTION ASKED. Do NOT give general summaries when asked something specific.
+2. When asked "what did @username comment" or "find user X", search the data character-by-character. The data is delimited by "@username" markers — locate the exact username string and quote their comment(s) verbatim.
+3. NEVER say "user not found" or "outside dataset" until you have searched the FULL data below for the literal string "@username".
+4. Do NOT generate generic sentiment analysis unless explicitly asked.
+5. Quote comments exactly as written, with their comment number.
+6. If the user asks for translation, translate; do not summarize.
+
+DATA (\${fullContent.length === content.length ? 'COMPLETE' : 'partial — ' + content.length + '/' + fullContent.length + ' chars'}):
+
+\${content}
+
+End of data. Always answer the user's specific question with direct quotes/facts from the data above.\`
     }];
     const empty = document.getElementById('chat-empty');
     if (empty) empty.remove();
