@@ -54,6 +54,8 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
 /* ── Feature pills ── */
 .pills{display:flex;justify-content:center;gap:.7rem;flex-wrap:wrap;margin-top:2rem}
 .pill{display:flex;align-items:center;gap:.4rem;background:var(--surface);border:1px solid var(--border2);border-radius:20px;padding:.4rem .9rem;font-size:.8rem;color:var(--muted);font-weight:500}
+.pill-btn{cursor:pointer;transition:all .2s}
+.pill-btn:hover{border-color:var(--a1);color:var(--text);background:rgba(124,58,237,.12)}
 .pill span{font-size:.95rem}
 
 /* ── Video info card ── */
@@ -110,14 +112,14 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
 
 /* ── Result ── */
 #result{padding:1.5rem 0}
-.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem}
+.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:1.2rem;align-items:start}
 @media(max-width:720px){.result-grid{grid-template-columns:1fr}.opt-row{grid-template-columns:1fr}}
-.result-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
-.result-card-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between}
+.result-card{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;height:72vh;min-height:480px}
+.result-card-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
 .result-card-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}
-.result-card-body{padding:1.1rem;flex:1;overflow:hidden}
-.content-preview{font-size:.82rem;color:var(--muted);line-height:1.65;max-height:260px;overflow-y:auto;white-space:pre-wrap;font-family:monospace}
-.result-actions{padding:.9rem 1.1rem;border-top:1px solid var(--border2);display:flex;gap:.6rem;flex-wrap:wrap}
+.result-card-body{padding:1.1rem;flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+.content-preview{font-size:.82rem;color:var(--muted);line-height:1.65;flex:1;overflow-y:auto;white-space:pre-wrap;font-family:monospace;min-height:0}
+.result-actions{padding:.9rem 1.1rem;border-top:1px solid var(--border2);display:flex;gap:.6rem;flex-wrap:wrap;flex-shrink:0}
 .btn-dl{display:flex;align-items:center;gap:.4rem;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:var(--r3);padding:.5rem 1rem;font-size:.85rem;font-weight:600;cursor:pointer;transition:all .2s;text-decoration:none}
 .btn-dl:hover{background:rgba(124,58,237,.15);border-color:var(--a1)}
 .btn-chat{display:flex;align-items:center;gap:.4rem;background:var(--grad);color:#fff;border:none;border-radius:var(--r3);padding:.5rem 1.1rem;font-size:.85rem;font-weight:700;cursor:pointer;transition:opacity .2s}
@@ -129,14 +131,14 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
 .copy-btn:hover{border-color:var(--a1);color:var(--text)}
 
 /* ── Chat panel ── */
-#chat-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column;height:100%;min-height:420px}
-.chat-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem}
+#chat-panel{background:var(--surface);border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.chat-header{padding:.9rem 1.1rem;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.6rem;flex-shrink:0}
 .chat-title{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:.5rem}
 .chat-controls{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
 .model-select{background:var(--surface2);border:1px solid var(--border2);border-radius:var(--r3);color:var(--text);font-size:.8rem;padding:.35rem .6rem;outline:none;cursor:pointer;font-family:inherit}
 .think-toggle{display:flex;align-items:center;gap:.4rem;font-size:.78rem;color:var(--muted);cursor:pointer}
 .think-toggle input{accent-color:var(--a1)}
-.chat-messages{flex:1;overflow-y:auto;padding:.9rem 1rem;display:flex;flex-direction:column;gap:.8rem}
+.chat-messages{flex:1;overflow-y:auto;padding:.9rem 1rem;display:flex;flex-direction:column;gap:.8rem;min-height:0}
 .msg{display:flex;flex-direction:column;gap:.25rem;max-width:85%}
 .msg.user{align-self:flex-end;align-items:flex-end}
 .msg.assistant{align-self:flex-start;align-items:flex-start}
@@ -155,7 +157,7 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
 .typing-dots span:nth-child(2){animation-delay:.15s}
 .typing-dots span:nth-child(3){animation-delay:.3s}
 @keyframes bounce{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-5px)}}
-.chat-input-area{padding:.8rem;border-top:1px solid var(--border2);background:var(--surface)}
+.chat-input-area{padding:.8rem;border-top:1px solid var(--border2);background:var(--surface);flex-shrink:0}
 .upload-preview{display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.5rem}
 .upload-chip{display:flex;align-items:center;gap:.3rem;background:var(--surface2);border:1px solid var(--border2);border-radius:4px;padding:.2rem .5rem;font-size:.75rem;color:var(--muted)}
 .upload-chip button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:.85rem;line-height:1}
@@ -210,10 +212,10 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
   </div>
 
   <div class="pills">
-    <div class="pill"><span>💬</span> Comments</div>
-    <div class="pill"><span>📝</span> Captions</div>
-    <div class="pill"><span>🎙️</span> AI Transcription</div>
-    <div class="pill"><span>🤖</span> Chat with Claude · GPT-5 · Gemini</div>
+    <div class="pill pill-btn" onclick="pickFeature('comments')"><span>💬</span> Comments</div>
+    <div class="pill pill-btn" onclick="pickFeature('captions')"><span>📝</span> Captions</div>
+    <div class="pill pill-btn" onclick="pickFeature('transcribe')"><span>🎙️</span> AI Transcript</div>
+    <div class="pill pill-btn" onclick="pickFeature('comments')"><span>🤖</span> Chat with Claude · GPT-5 · Gemini</div>
   </div>
 </section>
 
@@ -388,13 +390,14 @@ nav{position:sticky;top:0;z-index:100;background:rgba(7,7,15,.85);backdrop-filte
 <script>
 // ── Config ────────────────────────────────────────────────────
 const BACKEND = 'https://redstdui-ytbro-api.hf.space';
-const AI_API  = 'https://api-hoot.onrender.com/v1/chat/completions';
+const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
 
 // ── State ─────────────────────────────────────────────────────
 let state = {
   videoId: '',
   videoUrl: '',
   currentTab: 'comments',
+  pendingTab: null,
   selectedLang: null,
   result: null,        // {content, title, filename, aiUrl}
   chatHistory: [],
@@ -438,12 +441,23 @@ async function analyzeUrl() {
     document.getElementById('vid-id').textContent = data.video_id;
 
     show('actions');
-    switchTab('comments');
+    switchTab(state.pendingTab || 'comments');
+    state.pendingTab = null;
     hide('result');
     hide('processing');
   } catch (e) {
     alert('Could not reach backend. Is the HF Space running?');
   }
+}
+
+// ── Pick feature from hero pills ─────────────────────────────
+function pickFeature(tab) {
+  state.pendingTab = tab;
+  const input = document.getElementById('url-input');
+  input.focus();
+  input.placeholder = `Paste YouTube URL to open ${tab === 'transcribe' ? 'AI Transcript' : tab.charAt(0).toUpperCase() + tab.slice(1)}…`;
+  // If URL already entered, analyze immediately
+  if (input.value.trim()) analyzeUrl();
 }
 
 // ── Tab switching ─────────────────────────────────────────────
@@ -537,8 +551,6 @@ async function startDownload(type) {
   }
 
   try {
-    const evtSource = new EventSource(`${BACKEND}${endpoint}?${new URLSearchParams()}`);
-
     const res = await fetch(`${BACKEND}${endpoint}`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -566,6 +578,7 @@ async function startDownload(type) {
             addLog(log, '✅ Done!', 'ok');
           } else if (evt.type === 'error') {
             addLog(log, '❌ ' + evt.message, 'err');
+            state.lastError = evt.message;
           } else if (evt.type === 'done') {
             showResult(type);
             return;
@@ -589,10 +602,15 @@ function addLog(box, msg, cls='') {
 
 // ── Show result ───────────────────────────────────────────────
 function showResult(type) {
+  if (!state.result) {
+    // Download failed — stay on processing panel so user sees the error log
+    document.getElementById('proc-title').textContent = '❌ Download failed — see error above';
+    document.querySelector('.spinner').style.display = 'none';
+    show('actions');
+    return;
+  }
   hide('processing');
   show('result');
-
-  if (!state.result) return;
 
   const icons = {comments:'💬', captions:'📝', transcribe:'🎙️'};
   const labels = {comments:'Comments', captions:'Captions', transcribe:'Transcript'};
