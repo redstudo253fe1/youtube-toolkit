@@ -237,6 +237,8 @@ nav{
   transition:all .2s var(--ease);
 }
 .pill:hover{border-color:var(--border-3);color:var(--text);transform:translateY(-1px)}
+.pill-btn{cursor:pointer}
+.pill-btn:hover{border-color:var(--a1)!important;color:var(--text-1)!important;background:rgba(124,58,237,.12)!important;transform:translateY(-1px)}
 .pill .ico{font-size:1rem}
 
 /* ── Video info ──────────────────────────────────────── */
@@ -1066,10 +1068,10 @@ nav{
   </div>
 
   <div class="pills">
-    <div class="pill"><span class="ico">💬</span> Comments</div>
-    <div class="pill"><span class="ico">📝</span> Captions</div>
-    <div class="pill"><span class="ico">🎙️</span> AI Transcript</div>
-    <div class="pill"><span class="ico">🤖</span> Chat with AI</div>
+    <div class="pill pill-btn" onclick="pickFeature('comments')"><span class="ico">💬</span> Comments</div>
+    <div class="pill pill-btn" onclick="pickFeature('captions')"><span class="ico">📝</span> Captions</div>
+    <div class="pill pill-btn" onclick="pickFeature('transcribe')"><span class="ico">🎙️</span> AI Transcript</div>
+    <div class="pill pill-btn" onclick="pickFeature('comments')"><span class="ico">🤖</span> Chat with AI</div>
   </div>
 </section>
 
@@ -1317,7 +1319,7 @@ const AI_API  = 'https://ytbro.redstudio2595.workers.dev/aiproxy';
 
 let state = {
   videoId:'', videoUrl:'', videoTitle:'', videoThumb:'',
-  currentTab:'comments', selectedLang:null,
+  currentTab:'comments', pendingTab:null, selectedLang:null,
   results:{},
   chatHistory:[], uploadedFiles:[], contextLoaded:false,
   attachedFile:null,        // {filename, mimeType, content} - sent as base64 file with each AI request
@@ -1405,6 +1407,16 @@ function toast(msg, type=''){
   setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+// ── Pick feature from hero pills ─────────────────────
+function pickFeature(tab){
+  state.pendingTab = tab;
+  const input = document.getElementById('url-input');
+  const labels = {comments:'Comments', captions:'Captions', transcribe:'AI Transcript'};
+  input.placeholder = \`Paste YouTube URL to open \${labels[tab] || tab}…\`;
+  input.focus();
+  if (input.value.trim()) analyzeUrl();
+}
+
 // ── URL analyze ───────────────────────────────────────
 function extractVideoId(input){
   const s = input.trim();
@@ -1451,7 +1463,8 @@ async function analyzeUrl(){
   document.getElementById('vid-title').textContent = state.videoTitle;
   document.getElementById('vid-id').textContent = state.videoId;
   show('actions');
-  switchTab('comments');
+  switchTab(state.pendingTab || 'comments');
+  state.pendingTab = null;
   hide('result'); hide('processing');
 
   // Fetch real title via noembed.com (CORS-enabled, uses browser residential IP)
@@ -1826,7 +1839,7 @@ function openChat(){
     state.chatHistory = []; // clean history, file is sent as attachment per request
     state.attachedFile = {
       filename: \`\${state.currentTab}_\${(state.videoId||'data')}.md\`,
-      mimeType: 'text/markdown',
+      mimeType: 'text/plain',
       content: fullContent,
     };
     const empty = document.getElementById('chat-empty');
@@ -1875,16 +1888,15 @@ async function sendMessage(){
   msgs.scrollTop = msgs.scrollHeight;
 
   try {
-    // Build files array — attach the loaded result file (markdown) so AI sees full content every turn
-    const filesArr = [];
+    // Inject attached file content as a system message — avoids Perplexity S3 upload rate limits
+    let messages = state.chatHistory;
     if (state.attachedFile && state.attachedFile.content) {
-      // UTF-8 safe base64 encode (handles emojis & unicode)
-      const utf8 = unescape(encodeURIComponent(state.attachedFile.content));
-      const b64 = btoa(utf8);
-      filesArr.push(\`data:\${state.attachedFile.mimeType};base64,\${b64}\`);
+      messages = [
+        {role: 'system', content: \`The user has loaded the following content as context. Use it to answer their questions:\n\n\${state.attachedFile.content}\`},
+        ...state.chatHistory,
+      ];
     }
-    const reqBody = {model, thinking, messages: state.chatHistory, stream: true};
-    if (filesArr.length) reqBody.files = filesArr;
+    const reqBody = {model, thinking, messages, stream: true};
 
     const res = await fetch(AI_API, {
       method:'POST',
